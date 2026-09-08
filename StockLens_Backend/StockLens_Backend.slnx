@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="StockLens_API/StockLens_API.csproj" />
+  <Project Path="StockLens_BusinessLayer/StockLens_BusinessLayer.csproj" />
+  <Project Path="StockLens_DataLayer/StockLens_DataLayer.csproj" />
+  <Project Path="StockLens_Infrastructure/StockLens_Infrastructure.csproj" />
+</Solution>

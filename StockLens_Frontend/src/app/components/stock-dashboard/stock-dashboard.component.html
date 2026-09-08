@@ -1,0 +1,201 @@
+<div class="dashboard-container">
+  <!-- Top Application Header -->
+  <header class="app-header">
+    <div class="header-brand">
+      <div class="brand-logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M3 3v18h18" stroke-linecap="round"></path>
+          <path d="M18 9l-5 5-4-4-6 6" stroke-linecap="round" stroke-linejoin="round"></path>
+        </svg>
+      </div>
+      <div>
+        <h1 class="brand-title">Stock<span class="gradient-text">Lens</span></h1>
+        <p class="brand-subtitle">Phase 1: Real-Time NSE / BSE Market Intelligence</p>
+      </div>
+    </div>
+
+    <div class="header-status">
+      <div class="status-indicator">
+        <span class="status-pulse"></span>
+        <span class="status-text">IndianAPI Live</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Controls & Search Bar -->
+  <section class="controls-section">
+    <div class="controls-card">
+      <div class="search-and-exchange">
+        <!-- Stock Search Form -->
+        <form class="search-form" (submit)="$event.preventDefault(); onSearchSubmit()">
+          <div class="search-input-wrapper">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input 
+              type="text" 
+              class="search-input" 
+              placeholder="Search ticker symbol (e.g. RELIANCE, TCS, INFY)..."
+              [value]="searchQuery()"
+              (input)="searchQuery.set($any($event.target).value)"
+            />
+            <button type="submit" class="search-submit-btn" [disabled]="!searchQuery().trim()">
+              Search
+            </button>
+          </div>
+        </form>
+
+        <!-- Exchange Switcher -->
+        <div class="exchange-toggle">
+          <button 
+            type="button" 
+            class="exchange-btn" 
+            [class.active]="selectedExchange() === 'NSE'"
+            (click)="toggleExchange('NSE')"
+          >
+            NSE
+          </button>
+          <button 
+            type="button" 
+            class="exchange-btn" 
+            [class.active]="selectedExchange() === 'BSE'"
+            (click)="toggleExchange('BSE')"
+          >
+            BSE
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Stock Chips -->
+      <div class="quick-stocks-row">
+        <span class="quick-stocks-label">Popular Indian Stocks:</span>
+        <div class="chips-container">
+          @for (stock of quickStocks; track stock.symbol) {
+            <button 
+              type="button" 
+              class="stock-chip" 
+              [class.active]="selectedSymbol() === stock.symbol && selectedExchange() === stock.exchange"
+              (click)="selectStock(stock.symbol, stock.exchange)"
+            >
+              <span class="chip-symbol">{{ stock.symbol }}</span>
+            </button>
+          }
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Active Stock Header Banner -->
+  <section class="stock-banner">
+    <div class="banner-left">
+      <div class="symbol-exchange-row">
+        <span class="ticker-badge">{{ selectedSymbol() }}</span>
+        <span class="exchange-tag" [class.bse]="selectedExchange() === 'BSE'">{{ selectedExchange() }}</span>
+      </div>
+      <h2 class="company-heading">
+        {{ newsResponse()?.companyName || selectedSymbol() + ' Limited' }}
+      </h2>
+      <div class="meta-row">
+        <span class="feed-tag">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="meta-icon">
+            <path d="M4 11a9 9 0 0 1 9 9"></path>
+            <path d="M4 4a16 16 0 0 1 16 16"></path>
+            <circle cx="5" cy="19" r="1"></circle>
+          </svg>
+          Latest News Stream
+        </span>
+        @if (newsResponse()?.lastFetchedAt) {
+          <span class="sync-time">
+            • Last synced {{ newsResponse()?.lastFetchedAt | timeAgo }}
+          </span>
+        }
+      </div>
+    </div>
+
+    <div class="banner-right">
+      <button 
+        type="button" 
+        class="refresh-btn" 
+        [disabled]="loadingState() === 'loading' || isRefreshing()"
+        (click)="refreshNews()"
+      >
+        <svg 
+          class="refresh-icon" 
+          [class.spinning]="isRefreshing()"
+          viewBox="0 0 24 24" 
+          fill="none" 
+          stroke="currentColor" 
+          stroke-width="2"
+        >
+          <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+        </svg>
+        <span>{{ isRefreshing() ? 'Syncing IndianAPI...' : 'Refresh News' }}</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- Main Content Area: News Stream -->
+  <main class="news-section">
+    <!-- State 1: Loading Skeleton -->
+    @if (loadingState() === 'loading') {
+      <div class="skeleton-grid">
+        @for (item of [1, 2, 3, 4, 5, 6]; track item) {
+          <div class="skeleton-card">
+            <div class="skeleton-image shimmer"></div>
+            <div class="skeleton-content">
+              <div class="skeleton-line shimmer short"></div>
+              <div class="skeleton-line shimmer"></div>
+              <div class="skeleton-line shimmer medium"></div>
+            </div>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- State 2: Success Data Grid -->
+    @if (loadingState() === 'success' && newsResponse(); as res) {
+      <div class="news-grid">
+        @for (item of res.news; track item.id || item.sourceUrl) {
+          <app-stock-news-card [newsItem]="item"></app-stock-news-card>
+        }
+      </div>
+    }
+
+    <!-- State 3: Empty State -->
+    @if (loadingState() === 'empty') {
+      <div class="state-card empty-state">
+        <div class="state-icon-wrapper">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="state-svg">
+            <path d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1m2 13a2 2 0 0 1-2-2V7m2 13a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path>
+          </svg>
+        </div>
+        <h3 class="state-title">No News Available</h3>
+        <p class="state-description">
+          We couldn't find any recent news stories for <strong>{{ selectedSymbol() }}</strong> on <strong>{{ selectedExchange() }}</strong>.
+        </p>
+        <button type="button" class="action-btn" (click)="refreshNews()">
+          Check IndianAPI for Updates
+        </button>
+      </div>
+    }
+
+    <!-- State 4: Error State -->
+    @if (loadingState() === 'error') {
+      <div class="state-card error-state">
+        <div class="state-icon-wrapper error-icon-bg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="state-svg error-color">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+        </div>
+        <h3 class="state-title">Unable to Fetch News</h3>
+        <p class="state-description">{{ errorMessage() }}</p>
+        <button type="button" class="action-btn" (click)="refreshNews()">
+          Try Again
+        </button>
+      </div>
+    }
+  </main>
+</div>

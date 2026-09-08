@@ -1,0 +1,53 @@
+# Visual Studio temporary files
+.vs/
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Auto-generated files
+*.g.cs
+*.g.i.cs
+
+# Build results
+bin/
+obj/
+out/
+
+# Visual Studio Code workspace settings
+.vscode/
+
+# Rider IDE
+.idea/
+
+# NuGet Packages
+*.nupkg
+**/packages/*
+!**/packages/build/
+
+# ASP.NET Scaffolding
+ScaffoldingReadMe.txt
+
+# Logs
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.*.local
+
+# JetBrains Rider project files
+*.sln.iml
+
+# GitHub Copilot / IntelliCode / VS caches
+*.code-search
+*.copilot
+
+# Local workspace folders
+v17/
