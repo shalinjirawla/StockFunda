@@ -11,12 +11,38 @@ namespace StockLens_Infrastructure.DataContext
         {
         }
 
+        public DbSet<Company> CompanyMaster => Set<Company>();
         public DbSet<Stock> Stocks => Set<Stock>();
         public DbSet<StockNews> StockNews => Set<StockNews>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+
+            // Company configuration
+            modelBuilder.Entity<Company>(entity =>
+            {
+                entity.ToTable("CompanyMaster");
+                entity.HasKey(c => c.Id);
+
+                entity.Property(c => c.CompanyName)
+                    .HasMaxLength(200)
+                    .IsRequired();
+
+                entity.Property(c => c.Symbol)
+                    .HasMaxLength(20)
+                    .IsRequired();
+
+                entity.Property(c => c.Industry)
+                    .HasMaxLength(100);
+
+                entity.Property(c => c.LogoUrl)
+                    .HasMaxLength(1000);
+
+                entity.HasIndex(c => c.Symbol)
+                    .IsUnique()
+                    .HasDatabaseName("IX_Company_Symbol");
+            });
 
             // Stock configuration
             modelBuilder.Entity<Stock>(entity =>
@@ -28,33 +54,39 @@ namespace StockLens_Infrastructure.DataContext
                     .HasMaxLength(20)
                     .IsRequired();
 
-                entity.Property(s => s.CompanyName)
-                    .HasMaxLength(200)
-                    .IsRequired();
+                // entity.Property(s => s.CompanyName)
+                //     .HasMaxLength(200)
+                //     .IsRequired();
 
                 entity.Property(s => s.Exchange)
                     .HasMaxLength(10)
                     .IsRequired();
 
-                entity.Property(s => s.Industry)
-                    .HasMaxLength(100);
+                // entity.Property(s => s.Industry)
+                //     .HasMaxLength(100);
 
                 entity.HasIndex(s => new { s.Symbol, s.Exchange })
                     .IsUnique()
                     .HasDatabaseName("IX_Stocks_Symbol_Exchange");
 
+                // Relationship: Stock -> Company
+                entity.HasOne(s => s.Company)
+                    .WithMany(c => c.Stocks)
+                    .HasForeignKey(s => s.CompanyId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
                 // Seed initial top Indian stocks for quick test/use
-                var seedDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-                entity.HasData(
-                    new Stock { Id = 1, Symbol = "RELIANCE", CompanyName = "Reliance Industries Limited", Exchange = "NSE", Industry = "Oil & Gas / Conglomerate", CreatedAt = seedDate, UpdatedAt = seedDate },
-                    new Stock { Id = 2, Symbol = "TCS", CompanyName = "Tata Consultancy Services Limited", Exchange = "NSE", Industry = "Information Technology", CreatedAt = seedDate, UpdatedAt = seedDate },
-                    new Stock { Id = 3, Symbol = "INFY", CompanyName = "Infosys Limited", Exchange = "NSE", Industry = "Information Technology", CreatedAt = seedDate, UpdatedAt = seedDate },
-                    new Stock { Id = 4, Symbol = "TATAMOTORS", CompanyName = "Tata Motors Limited", Exchange = "NSE", Industry = "Automobile", CreatedAt = seedDate, UpdatedAt = seedDate },
-                    new Stock { Id = 5, Symbol = "HDFCBANK", CompanyName = "HDFC Bank Limited", Exchange = "NSE", Industry = "Banking / Financial Services", CreatedAt = seedDate, UpdatedAt = seedDate },
-                    new Stock { Id = 6, Symbol = "ICICIBANK", CompanyName = "ICICI Bank Limited", Exchange = "NSE", Industry = "Banking / Financial Services", CreatedAt = seedDate, UpdatedAt = seedDate },
-                    new Stock { Id = 7, Symbol = "RELIANCE", CompanyName = "Reliance Industries Limited", Exchange = "BSE", Industry = "Oil & Gas / Conglomerate", CreatedAt = seedDate, UpdatedAt = seedDate },
-                    new Stock { Id = 8, Symbol = "TCS", CompanyName = "Tata Consultancy Services Limited", Exchange = "BSE", Industry = "Information Technology", CreatedAt = seedDate, UpdatedAt = seedDate }
-                );
+                //var seedDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+                //entity.HasData(
+                //   new Stock { Id = 1, Symbol = "RELIANCE", CompanyName = "Reliance Industries Limited", Exchange = "NSE", Industry = "Oil & Gas / Conglomerate", CreatedAt = seedDate, UpdatedAt = seedDate },
+                //   new Stock { Id = 2, Symbol = "TCS", CompanyName = "Tata Consultancy Services Limited", Exchange = "NSE", Industry = "Information Technology", CreatedAt = seedDate, UpdatedAt = seedDate },
+                //   new Stock { Id = 3, Symbol = "INFY", CompanyName = "Infosys Limited", Exchange = "NSE", Industry = "Information Technology", CreatedAt = seedDate, UpdatedAt = seedDate },
+                //   new Stock { Id = 4, Symbol = "TATAMOTORS", CompanyName = "Tata Motors Limited", Exchange = "NSE", Industry = "Automobile", CreatedAt = seedDate, UpdatedAt = seedDate },
+                //   new Stock { Id = 5, Symbol = "HDFCBANK", CompanyName = "HDFC Bank Limited", Exchange = "NSE", Industry = "Banking / Financial Services", CreatedAt = seedDate, UpdatedAt = seedDate },
+                //   new Stock { Id = 6, Symbol = "ICICIBANK", CompanyName = "ICICI Bank Limited", Exchange = "NSE", Industry = "Banking / Financial Services", CreatedAt = seedDate, UpdatedAt = seedDate },
+                //   new Stock { Id = 7, Symbol = "RELIANCE", CompanyName = "Reliance Industries Limited", Exchange = "BSE", Industry = "Oil & Gas / Conglomerate", CreatedAt = seedDate, UpdatedAt = seedDate },
+                //   new Stock { Id = 8, Symbol = "TCS", CompanyName = "Tata Consultancy Services Limited", Exchange = "BSE", Industry = "Information Technology", CreatedAt = seedDate, UpdatedAt = seedDate }
+                //);
             });
 
             // StockNews configuration
@@ -105,10 +137,14 @@ namespace StockLens_Infrastructure.DataContext
                     .HasDatabaseName("IX_StockNews_PublishedAt");
 
                 // Unique constraint on ExternalNewsId when present
-                entity.HasIndex(sn => sn.ExternalNewsId)
+                //entity.HasIndex(sn => sn.ExternalNewsId)
+                //    .IsUnique()
+                //    .HasFilter("[ExternalNewsId] IS NOT NULL")
+                //    .HasDatabaseName("IX_StockNews_ExternalNewsId");
+                entity.HasIndex(sn => new { sn.StockId, sn.ExternalNewsId })
                     .IsUnique()
                     .HasFilter("[ExternalNewsId] IS NOT NULL")
-                    .HasDatabaseName("IX_StockNews_ExternalNewsId");
+                    .HasDatabaseName("IX_StockNews_StockId_ExternalNewsId");
 
                 // Unique constraint on (StockId, SourceUrl) to prevent duplicate articles for the same stock
                 entity.HasIndex(sn => new { sn.StockId, sn.SourceUrl })

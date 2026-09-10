@@ -20,13 +20,14 @@ namespace StockLens_Infrastructure.Repositories
         public async Task<Stock?> GetByIdAsync(int id)
         {
             return await _context.Stocks
+                .Include(s => s.Company)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(s => s.Id == id);
         }
 
         public async Task<Stock?> GetBySymbolAsync(string symbol, string? exchange = null)
         {
-            var query = _context.Stocks.AsNoTracking();
+            var query = _context.Stocks.Include(s => s.Company).AsNoTracking();
 
             if (!string.IsNullOrWhiteSpace(exchange))
             {
@@ -39,6 +40,7 @@ namespace StockLens_Infrastructure.Repositories
         public async Task<IEnumerable<Stock>> GetAllStocksAsync()
         {
             return await _context.Stocks
+                .Include(s => s.Company)
                 .AsNoTracking()
                 .OrderBy(s => s.Symbol)
                 .ToListAsync();

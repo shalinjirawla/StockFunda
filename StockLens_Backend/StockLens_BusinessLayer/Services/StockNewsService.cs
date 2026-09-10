@@ -7,6 +7,7 @@ using StockLens_DataLayer.Entities;
 using StockLens_DataLayer.Interfaces;
 using StockLens_Infrastructure.ExternalServices.IndianApi;
 using StockLens_Infrastructure.ExternalServices.IndianApi.Models;
+using StockLens_Infrastructure.ExternalServices.YahooFinanceApi;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -23,6 +24,8 @@ namespace StockLens_BusinessLayer.Services
         private readonly IMapper _mapper;
         private readonly IndianApiSettings _settings;
         private readonly ILogger<StockNewsService> _logger;
+        private readonly IYahooFinanceClient _yahooFinanceClient;
+        private readonly ICompanyRepository _companyRepository;
 
         public StockNewsService(
             IStockRepository stockRepository,
@@ -30,7 +33,9 @@ namespace StockLens_BusinessLayer.Services
             IIndianApiNewsClient indianApiClient,
             IMapper mapper,
             IOptions<IndianApiSettings> settings,
-            ILogger<StockNewsService> logger)
+            ILogger<StockNewsService> logger,
+            IYahooFinanceClient yahooFinanceClient,
+            ICompanyRepository companyRepository)
         {
             _stockRepository = stockRepository;
             _newsRepository = newsRepository;
@@ -38,6 +43,8 @@ namespace StockLens_BusinessLayer.Services
             _mapper = mapper;
             _settings = settings.Value;
             _logger = logger;
+            _yahooFinanceClient = yahooFinanceClient;
+            _companyRepository = companyRepository;
         }
 
         public async Task<StockNewsResponseDto> GetLatestNewsByStockIdAsync(
@@ -77,14 +84,44 @@ namespace StockLens_BusinessLayer.Services
             if (stock == null)
             {
                 _logger.LogInformation("Stock {Symbol} ({Exchange}) not found in DB. Auto-registering stock.", cleanSymbol, cleanExchange);
+                
+                // Fetch real company name and industry dynamically from Yahoo Finance
+                var details = await _yahooFinanceClient.GetCompanyDetailsAsync(cleanSymbol, cleanExchange, cancellationToken);
+                
+                if (string.IsNullOrWhiteSpace(details.CompanyName))
+                {
+                    _logger.LogWarning("Failed to find valid company details for {Symbol} on Yahoo Finance. Aborting auto-registration.", cleanSymbol);
+                    throw new KeyNotFoundException($"Invalid stock symbol: '{cleanSymbol}'. Company not found.");
+                }
+
+                var companyNameToSave = details.CompanyName;
+
+                // Check if the Company already exists in CompanyMaster
+                var existingCompany = await _companyRepository.GetCompanyBySymbolAsync(cleanSymbol);
+
                 stock = new Stock
                 {
                     Symbol = cleanSymbol,
-                    CompanyName = $"{cleanSymbol} Limited",
                     Exchange = cleanExchange,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
+
+                if (existingCompany != null)
+                {
+                    stock.CompanyId = existingCompany.Id;
+                }
+                else
+                {
+                    stock.Company = new Company 
+                    {
+                        CompanyName = companyNameToSave,
+                        Symbol = cleanSymbol,
+                        Industry = details.Industry,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
+                }
 
                 stock = await _stockRepository.AddAsync(stock);
                 await _stockRepository.SaveChangesAsync();
@@ -133,7 +170,7 @@ namespace StockLens_BusinessLayer.Services
                 StockId = stock.Id,
                 Symbol = stock.Symbol,
                 Exchange = stock.Exchange,
-                CompanyName = stock.CompanyName,
+                CompanyName = stock.Company?.CompanyName ?? stock.Symbol,
                 News = newsDtos,
                 Page = page,
                 Limit = limit,
@@ -145,7 +182,7 @@ namespace StockLens_BusinessLayer.Services
         {
             try
             {
-                var articles = await _indianApiClient.GetStockNewsAsync(stock.Symbol, stock.CompanyName, cancellationToken);
+                var articles = await _indianApiClient.GetStockNewsAsync(stock.Symbol, stock.Company?.CompanyName, cancellationToken);
 
                 if (articles == null || articles.Count == 0)
                 {

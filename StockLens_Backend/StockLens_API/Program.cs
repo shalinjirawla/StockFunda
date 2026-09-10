@@ -6,6 +6,7 @@ using StockLens_DataLayer.Interfaces;
 using StockLens_Infrastructure.DataContext;
 using StockLens_Infrastructure.ExternalServices.IndianApi;
 using StockLens_Infrastructure.Repositories;
+using StockLens_Infrastructure.Seeders;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -34,12 +35,23 @@ builder.Services.AddHttpClient<IIndianApiNewsClient, IndianApiNewsClient>((servi
     client.DefaultRequestHeaders.Add("Accept", "application/json");
 });
 
+// Register Yahoo Finance HTTP Client
+builder.Services.AddHttpClient<StockLens_Infrastructure.ExternalServices.YahooFinanceApi.IYahooFinanceClient, StockLens_Infrastructure.ExternalServices.YahooFinanceApi.YahooFinanceClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
+
 // Register Repositories
 builder.Services.AddScoped<IStockRepository, StockRepository>();
 builder.Services.AddScoped<IStockNewsRepository, StockNewsRepository>();
+builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
+
+// Register Seeders
+builder.Services.AddTransient<CompanyMasterSeeder>();
 
 // Register Business Services
 builder.Services.AddScoped<IStockNewsService, StockNewsService>();
+builder.Services.AddScoped<ICompanyService, CompanyService>();
 
 // Register AutoMapper
 builder.Services.AddAutoMapper(cfg => cfg.AddProfile<MapperProfile>());
@@ -61,6 +73,13 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
+}
+
+// Execute Seeders on Startup
+using (var scope = app.Services.CreateScope())
+{
+    var seeder = scope.ServiceProvider.GetRequiredService<CompanyMasterSeeder>();
+    await seeder.SeedAsync();
 }
 
 app.UseSwagger();

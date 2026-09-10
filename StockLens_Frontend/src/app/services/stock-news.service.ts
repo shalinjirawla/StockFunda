@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { Stock, StockNewsResponse } from '../models/stock-news.model';
+import { Stock, Company, StockNewsResponse } from '../models/stock-news.model';
 import { environment } from '../../environments/environment';
 
 @Injectable({
@@ -16,6 +16,14 @@ export class StockNewsService {
    */
   getStocks(): Observable<Stock[]> {
     return this.http.get<Stock[]>(`${this.baseUrl}/api/stocks`);
+  }
+
+  /**
+   * Search companies by query (symbol or company name).
+   */
+  searchCompanies(query: string): Observable<Company[]> {
+    const params = new HttpParams().set('query', query).set('limit', '10');
+    return this.http.get<Company[]>(`${this.baseUrl}/api/companies/search`, { params });
   }
 
   /**

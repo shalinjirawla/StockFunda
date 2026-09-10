@@ -14,6 +14,7 @@ namespace StockLens_BusinessLayer.MapperProfile
                 .ForMember(dest => dest.ArticleUrl, opt => opt.MapFrom(src => ArticleUrlNormalizer.Normalize(src.SourceUrl, src.SourceName)));
 
             CreateMap<Stock, StockDto>();
+            CreateMap<Company, CompanyDto>();
 
             CreateMap<IndianApiStandardArticle, StockNews>()
                 .ForMember(dest => dest.Id, opt => opt.Ignore())

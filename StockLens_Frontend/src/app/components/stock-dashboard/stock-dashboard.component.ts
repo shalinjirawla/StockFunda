@@ -1,8 +1,10 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Subject, Subscription, of } from 'rxjs';
+import { debounceTime, distinctUntilChanged, switchMap, catchError } from 'rxjs/operators';
 import { StockNewsService } from '../../services/stock-news.service';
-import { Stock, StockNewsResponse, LoadingState } from '../../models/stock-news.model';
+import { Stock, Company, StockNewsResponse, LoadingState } from '../../models/stock-news.model';
 import { StockNewsCardComponent } from '../stock-news-card/stock-news-card.component';
 import { TimeAgoPipe } from '../../pipes/time-ago.pipe';
 
@@ -13,7 +15,7 @@ import { TimeAgoPipe } from '../../pipes/time-ago.pipe';
   templateUrl: './stock-dashboard.component.html',
   styleUrl: './stock-dashboard.component.css'
 })
-export class StockDashboardComponent implements OnInit {
+export class StockDashboardComponent implements OnInit, OnDestroy {
   private readonly newsService = inject(StockNewsService);
 
   // Quick select stocks
@@ -30,15 +32,49 @@ export class StockDashboardComponent implements OnInit {
   selectedSymbol = signal<string>('RELIANCE');
   selectedExchange = signal<string>('NSE');
   searchQuery = signal<string>('');
-  
+
   newsResponse = signal<StockNewsResponse | null>(null);
   loadingState = signal<LoadingState>('idle');
   errorMessage = signal<string>('');
   isRefreshing = signal<boolean>(false);
 
+  // Typeahead search
+  searchResults = signal<Company[]>([]);
+  isSearching = signal<boolean>(false);
+  private searchSubject = new Subject<string>();
+  private searchSubscription?: Subscription;
+
   ngOnInit(): void {
     this.loadAvailableStocks();
     this.fetchNews(false);
+    this.setupSearch();
+  }
+
+  ngOnDestroy(): void {
+    this.searchSubscription?.unsubscribe();
+  }
+
+  setupSearch(): void {
+    this.searchSubscription = this.searchSubject.pipe(
+      debounceTime(300),
+      distinctUntilChanged(),
+      switchMap((query) => {
+        if (!query.trim() || query.trim().length < 2) {
+          this.searchResults.set([]);
+          this.isSearching.set(false);
+          return of([]);
+        }
+        this.isSearching.set(true);
+        return this.newsService.searchCompanies(query).pipe(
+          catchError(() => {
+            return of([]);
+          })
+        );
+      })
+    ).subscribe((results) => {
+      this.searchResults.set(results);
+      this.isSearching.set(false);
+    });
   }
 
   loadAvailableStocks(): void {
@@ -62,16 +98,31 @@ export class StockDashboardComponent implements OnInit {
   toggleExchange(exchange: string): void {
     if (this.selectedExchange() !== exchange) {
       this.selectedExchange.set(exchange);
+      this.searchQuery.set('');
+      this.searchResults.set([]);
       this.fetchNews(false);
     }
+  }
+
+  onSearchInput(event: Event): void {
+    const value = (event.target as HTMLInputElement).value;
+    this.searchQuery.set(value);
+    this.searchSubject.next(value);
   }
 
   onSearchSubmit(): void {
     const query = this.searchQuery().trim();
     if (query) {
       this.selectedSymbol.set(query.toUpperCase());
+      this.searchResults.set([]); // Hide dropdown
       this.fetchNews(false);
     }
+  }
+
+  selectSearchResult(company: Company): void {
+    this.searchQuery.set(''); // Clear search box
+    this.searchResults.set([]); // Hide dropdown
+    this.selectStock(company.symbol, this.selectedExchange());
   }
 
   refreshNews(): void {
@@ -102,7 +153,7 @@ export class StockDashboardComponent implements OnInit {
       error: (err) => {
         this.isRefreshing.set(false);
         this.loadingState.set('error');
-        this.errorMessage.set(err.error?.message || 'Failed to retrieve news from backend. Please try again.');
+        this.errorMessage.set(err.error?.detail || err.error?.message || 'Failed to retrieve news from backend. Please try again.');
       }
     });
   }

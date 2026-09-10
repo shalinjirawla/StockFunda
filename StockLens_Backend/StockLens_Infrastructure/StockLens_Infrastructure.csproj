@@ -18,4 +18,10 @@
     <ProjectReference Include="..\StockLens_DataLayer\StockLens_DataLayer.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="Seeders\Data\companies.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -34,6 +35,69 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
             _logger = logger;
         }
 
+        private bool IsArticleRelevant(IndianApiRecentNewsItem article, string symbol, string? companyName)
+        {
+            var textToSearch = $"{article.Title} {article.Headline} {article.Summary} {article.Description} {(article.Topics != null ? string.Join(" ", article.Topics) : "")}";
+
+            // 1. Exact Symbol Match with word boundaries
+            if (Regex.IsMatch(textToSearch, $@"\b{Regex.Escape(symbol)}\b", RegexOptions.IgnoreCase)) 
+                return true;
+
+            // 2. Exact Company Name Match with word boundaries
+            if (!string.IsNullOrWhiteSpace(companyName))
+            {
+                var cleanName = Regex.Replace(companyName, @"(?i)\b(Limited|Ltd\.?)\b", "").Trim();
+                if (!string.IsNullOrWhiteSpace(cleanName) && Regex.IsMatch(textToSearch, $@"\b{Regex.Escape(cleanName)}\b", RegexOptions.IgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private async Task<IReadOnlyList<IndianApiStandardArticle>?> FetchFromStockEndpointAsync(
+            string searchTerm, 
+            string symbol, 
+            string? companyName, 
+            CancellationToken cancellationToken)
+        {
+            var endpoint = $"/stock?name={Uri.EscapeDataString(searchTerm)}";
+            using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
+            request.Headers.Add("x-api-key", _settings.ApiKey);
+
+            _logger.LogInformation("Fetching news from IndianAPI for symbol: {Symbol} via {Endpoint}", symbol, endpoint);
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("IndianAPI /stock returned status {StatusCode} for searchTerm '{SearchTerm}'.", response.StatusCode, searchTerm);
+                return null;
+            }
+
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            var trimmed = json.TrimStart();
+
+            if (trimmed.StartsWith("["))
+            {
+                var items = JsonSerializer.Deserialize<List<IndianApiRecentNewsItem>>(json, JsonOptions);
+                if (items != null && items.Count > 0)
+                {
+                    var relevantNews = items.Where(n => IsArticleRelevant(n, symbol, companyName)).ToList();
+                    if (relevantNews.Count > 0) return relevantNews.Select(n => MapToStandardArticle(n, symbol, companyName)).ToList();
+                }
+            }
+            else
+            {
+                var stockResponse = JsonSerializer.Deserialize<IndianApiStockResponse>(json, JsonOptions);
+                if (stockResponse?.RecentNews != null && stockResponse.RecentNews.Count > 0)
+                {
+                    var relevantNews = stockResponse.RecentNews.Where(n => IsArticleRelevant(n, symbol, companyName)).ToList();
+                    if (relevantNews.Count > 0) return relevantNews.Select(n => MapToStandardArticle(n, symbol, companyName)).ToList();
+                }
+            }
+
+            return null;
+        }
+
         public async Task<IReadOnlyList<IndianApiStandardArticle>> GetStockNewsAsync(
             string symbol,
             string? companyName = null,
@@ -53,40 +117,18 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
 
             try
             {
-                var searchTerm = Uri.EscapeDataString(symbol);
-                var endpoint = $"/stock?name={searchTerm}";
+                var cleanName = !string.IsNullOrWhiteSpace(companyName) ? Regex.Replace(companyName, @"(?i)\b(Limited|Ltd\.?)\b", "").Trim() : null;
+                var smartTerm = !string.IsNullOrWhiteSpace(cleanName) ? cleanName : symbol;
+                
+                var result = await FetchFromStockEndpointAsync(smartTerm, symbol, companyName, cancellationToken);
+                if (result != null && result.Count > 0) return result;
 
-                using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
-                request.Headers.Add("x-api-key", _settings.ApiKey);
-
-                _logger.LogInformation("Fetching news from IndianAPI for symbol: {Symbol} via {Endpoint}", symbol, endpoint);
-                using var response = await _httpClient.SendAsync(request, cancellationToken);
-
-                if (!response.IsSuccessStatusCode)
+                var rawSymbol = symbol.Trim();
+                if (!string.Equals(smartTerm, rawSymbol, StringComparison.OrdinalIgnoreCase))
                 {
-                    _logger.LogWarning("IndianAPI /stock returned status {StatusCode} for symbol {Symbol}. Trying fallback /news endpoint.", response.StatusCode, symbol);
-                    return await TryFetchFromGeneralNewsEndpointAsync(symbol, companyName, cancellationToken);
-                }
-
-                var json = await response.Content.ReadAsStringAsync(cancellationToken);
-                var trimmed = json.TrimStart();
-
-                // If response is a direct JSON array (like /news endpoint)
-                if (trimmed.StartsWith("["))
-                {
-                    var items = JsonSerializer.Deserialize<List<IndianApiRecentNewsItem>>(json, JsonOptions);
-                    if (items != null && items.Count > 0)
-                    {
-                        return items.Select(n => MapToStandardArticle(n, symbol, companyName)).ToList();
-                    }
-                }
-                else
-                {
-                    var stockResponse = JsonSerializer.Deserialize<IndianApiStockResponse>(json, JsonOptions);
-                    if (stockResponse?.RecentNews != null && stockResponse.RecentNews.Count > 0)
-                    {
-                        return stockResponse.RecentNews.Select(n => MapToStandardArticle(n, symbol, companyName)).ToList();
-                    }
+                    _logger.LogInformation("No relevant news found for '{SmartTerm}'. Trying exact symbol '{Symbol}'.", smartTerm, rawSymbol);
+                    result = await FetchFromStockEndpointAsync(rawSymbol, symbol, companyName, cancellationToken);
+                    if (result != null && result.Count > 0) return result;
                 }
 
                 _logger.LogInformation("No recentNews found in /stock response for {Symbol}. Checking general /news endpoint.", symbol);
@@ -117,24 +159,11 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
 
                     if (allNews != null && allNews.Count > 0)
                     {
-                        // Filter articles that mention the symbol or company name in title, summary, or topics
-                        var queryTerm = symbol.ToLowerInvariant();
-                        var nameTerm = companyName?.ToLowerInvariant();
-
-                        var matched = allNews.Where(a =>
-                            (!string.IsNullOrEmpty(a.Title) && a.Title.ToLowerInvariant().Contains(queryTerm)) ||
-                            (!string.IsNullOrEmpty(a.Headline) && a.Headline.ToLowerInvariant().Contains(queryTerm)) ||
-                            (!string.IsNullOrEmpty(a.Summary) && a.Summary.ToLowerInvariant().Contains(queryTerm)) ||
-                            (!string.IsNullOrEmpty(a.Description) && a.Description.ToLowerInvariant().Contains(queryTerm)) ||
-                            (a.Topics != null && a.Topics.Any(t => t.ToLowerInvariant().Contains(queryTerm))) ||
-                            (nameTerm != null && (
-                                (!string.IsNullOrEmpty(a.Title) && a.Title.ToLowerInvariant().Contains(nameTerm)) ||
-                                (!string.IsNullOrEmpty(a.Summary) && a.Summary.ToLowerInvariant().Contains(nameTerm))
-                            ))
-                        ).ToList();
+                        var matched = allNews.Where(a => IsArticleRelevant(a, symbol, companyName)).ToList();
 
                         // If symbol matches found, return them; otherwise return top latest general market news
-                        var toMap = matched.Count > 0 ? matched : allNews.Take(10).ToList();
+                        //var toMap = matched.Count > 0 ? matched : allNews.Take(10).ToList();
+                        var toMap = matched;
                         return toMap.Select(n => MapToStandardArticle(n, symbol, companyName)).ToList();
                     }
                 }

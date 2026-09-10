@@ -1,3 +1,11 @@
+export interface Company {
+  id: number;
+  symbol: string;
+  companyName: string;
+  industry?: string;
+  logoUrl?: string;
+}
+
 export interface Stock {
   id: number;
   symbol: string;
