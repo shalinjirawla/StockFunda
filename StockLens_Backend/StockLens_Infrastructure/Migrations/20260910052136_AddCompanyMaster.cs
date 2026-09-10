@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -53,21 +53,6 @@ namespace StockLens_Infrastructure.Migrations
                 keyColumn: "Id",
                 keyValue: 8);
 
-            migrationBuilder.DropColumn(
-                name: "CompanyName",
-                table: "Stocks");
-
-            migrationBuilder.DropColumn(
-                name: "Industry",
-                table: "Stocks");
-
-            migrationBuilder.AddColumn<int>(
-                name: "CompanyId",
-                table: "Stocks",
-                type: "int",
-                nullable: false,
-                defaultValue: 0);
-
             migrationBuilder.CreateTable(
                 name: "CompanyMaster",
                 columns: table => new
@@ -87,15 +72,49 @@ namespace StockLens_Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateIndex(
-                name: "IX_Stocks_CompanyId",
-                table: "Stocks",
-                column: "CompanyId");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_Company_Symbol",
                 table: "CompanyMaster",
                 column: "Symbol",
                 unique: true);
+
+            migrationBuilder.Sql(@"
+                IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Stocks' AND COLUMN_NAME = 'CompanyName')
+                BEGIN
+                    INSERT INTO [CompanyMaster] ([CompanyName], [Symbol], [Industry], [CreatedAt], [UpdatedAt])
+                    SELECT DISTINCT [CompanyName], [Symbol], [Industry], GETUTCDATE(), GETUTCDATE()
+                    FROM [Stocks]
+                    WHERE [Symbol] NOT IN (SELECT [Symbol] FROM [CompanyMaster]);
+                END
+            ");
+
+            migrationBuilder.AddColumn<int>(
+                name: "CompanyId",
+                table: "Stocks",
+                type: "int",
+                nullable: false,
+                defaultValue: 0);
+
+            migrationBuilder.Sql(@"
+                UPDATE s
+                SET s.[CompanyId] = c.[Id]
+                FROM [Stocks] s
+                INNER JOIN [CompanyMaster] c ON s.[Symbol] = c.[Symbol];
+
+                DELETE FROM [Stocks] WHERE [CompanyId] = 0;
+            ");
+
+            migrationBuilder.DropColumn(
+                name: "CompanyName",
+                table: "Stocks");
+
+            migrationBuilder.DropColumn(
+                name: "Industry",
+                table: "Stocks");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Stocks_CompanyId",
+                table: "Stocks",
+                column: "CompanyId");
 
             migrationBuilder.AddForeignKey(
                 name: "FK_Stocks_CompanyMaster_CompanyId",

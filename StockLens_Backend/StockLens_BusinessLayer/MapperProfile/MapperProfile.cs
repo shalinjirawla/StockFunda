@@ -23,6 +23,23 @@ namespace StockLens_BusinessLayer.MapperProfile
                 .ForMember(dest => dest.FetchedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore());
+
+            CreateMap<StockShareholding, ShareholdingPeriodDto>()
+                .ForMember(dest => dest.Promoter, opt => opt.MapFrom(src => src.PromoterHolding))
+                .ForMember(dest => dest.Fii, opt => opt.MapFrom(src => src.FiiHolding))
+                .ForMember(dest => dest.Dii, opt => opt.MapFrom(src => src.DiiHolding))
+                .ForMember(dest => dest.Government, opt => opt.MapFrom(src => src.GovernmentHolding))
+                .ForMember(dest => dest.Public, opt => opt.MapFrom(src => src.PublicHolding))
+                .ForMember(dest => dest.Others, opt => opt.MapFrom(src => src.OtherHolding))
+                .ForMember(dest => dest.ShareholdersCount, opt => opt.MapFrom(src => src.ShareholdersCount))
+                .ForMember(dest => dest.DataAsOf, opt => opt.Ignore());
+
+            CreateMap<StockFinancial, AnnualCashflowItemDto>()
+                .ForMember(dest => dest.DataAsOf, opt => opt.Ignore())
+                .ForMember(dest => dest.PeriodEndDate, opt => opt.Ignore())
+                .ForMember(dest => dest.CfoToNetProfitRatio, opt => opt.Ignore())
+                .ForMember(dest => dest.FcfMarginPercent, opt => opt.Ignore())
+                .ForMember(dest => dest.CapexToCfoPercent, opt => opt.Ignore());
         }
     }
 }

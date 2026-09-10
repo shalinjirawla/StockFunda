@@ -115,107 +115,177 @@
         <span class="exchange-tag" [class.bse]="selectedExchange() === 'BSE'">{{ selectedExchange() }}</span>
       </div>
       <h2 class="company-heading">
-        {{ newsResponse()?.companyName || selectedSymbol() + ' Limited' }}
+        {{ cashflowResponse()?.companyName || shareholdingResponse()?.companyName || newsResponse()?.companyName || selectedSymbol() + ' Limited' }}
       </h2>
       <div class="meta-row">
         <span class="feed-tag">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="meta-icon">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+          </svg>
+          Comprehensive Fundamental Analytics
+        </span>
+      </div>
+    </div>
+
+    <!-- Tab Navigation Pills -->
+    <div class="banner-right-nav">
+      <div class="tab-pill-switcher">
+        <button 
+          type="button" 
+          class="tab-btn" 
+          [class.active]="activeTab() === 'cashflow'"
+          (click)="setTab('cashflow')"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="tab-icon">
+            <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+          </svg>
+          <span>Annual Cash Flow</span>
+        </button>
+
+        <button 
+          type="button" 
+          class="tab-btn" 
+          [class.active]="activeTab() === 'shareholding'"
+          (click)="setTab('shareholding')"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="tab-icon">
+            <path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path>
+            <path d="M22 12A10 10 0 0 0 12 2v10z"></path>
+          </svg>
+          <span>Shareholding Pattern</span>
+        </button>
+
+        <button 
+          type="button" 
+          class="tab-btn" 
+          [class.active]="activeTab() === 'news'"
+          (click)="setTab('news')"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="tab-icon">
             <path d="M4 11a9 9 0 0 1 9 9"></path>
             <path d="M4 4a16 16 0 0 1 16 16"></path>
             <circle cx="5" cy="19" r="1"></circle>
           </svg>
-          Latest News Stream
-        </span>
-        @if (newsResponse()?.lastFetchedAt) {
-          <span class="sync-time">
-            • Last synced {{ newsResponse()?.lastFetchedAt | timeAgo }}
-          </span>
-        }
+          <span>Latest News</span>
+        </button>
       </div>
-    </div>
-
-    <div class="banner-right">
-      <button 
-        type="button" 
-        class="refresh-btn" 
-        [disabled]="loadingState() === 'loading' || isRefreshing()"
-        (click)="refreshNews()"
-      >
-        <svg 
-          class="refresh-icon" 
-          [class.spinning]="isRefreshing()"
-          viewBox="0 0 24 24" 
-          fill="none" 
-          stroke="currentColor" 
-          stroke-width="2"
-        >
-          <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
-        </svg>
-        <span>{{ isRefreshing() ? 'Syncing IndianAPI...' : 'Refresh News' }}</span>
-      </button>
     </div>
   </section>
 
-  <!-- Main Content Area: News Stream -->
-  <main class="news-section">
-    <!-- State 1: Loading Skeleton -->
-    @if (loadingState() === 'loading') {
-      <div class="skeleton-grid">
-        @for (item of [1, 2, 3, 4, 5, 6]; track item) {
-          <div class="skeleton-card">
-            <div class="skeleton-image shimmer"></div>
-            <div class="skeleton-content">
-              <div class="skeleton-line shimmer short"></div>
-              <div class="skeleton-line shimmer"></div>
-              <div class="skeleton-line shimmer medium"></div>
-            </div>
+  <!-- Main Content Area -->
+  <main class="main-content-section">
+    <!-- TAB 1: Annual Cash Flow & Financials -->
+    @if (activeTab() === 'cashflow') {
+      <app-stock-cashflow-card
+        [cashflow]="cashflowResponse()"
+        [loadingState]="cashflowLoadingState()"
+        [errorMessage]="cashflowErrorMessage()"
+        [isRefreshing]="isCashflowRefreshing()"
+        (refreshRequested)="fetchCashflow(true)"
+      ></app-stock-cashflow-card>
+    }
+
+    <!-- TAB 2: Shareholding Pattern -->
+    @if (activeTab() === 'shareholding') {
+      <app-stock-shareholding-card
+        [shareholding]="shareholdingResponse()"
+        [loadingState]="shareholdingLoadingState()"
+        [errorMessage]="shareholdingErrorMessage()"
+        [isRefreshing]="isShareholdingRefreshing()"
+        (refreshRequested)="fetchShareholding(true)"
+      ></app-stock-shareholding-card>
+    }
+
+    <!-- TAB 3: News Stream -->
+    @if (activeTab() === 'news') {
+      <div class="news-tab-wrapper">
+        <div class="tab-action-bar">
+          <div class="tab-action-left">
+            <h3 class="tab-section-title">Market Headlines & Corporate Developments</h3>
+            @if (newsResponse()?.lastFetchedAt) {
+              <span class="tab-subtext">Synced {{ newsResponse()?.lastFetchedAt | timeAgo }}</span>
+            }
+          </div>
+          <button 
+            type="button" 
+            class="refresh-btn" 
+            [disabled]="newsLoadingState() === 'loading' || isNewsRefreshing()"
+            (click)="fetchNews(true)"
+          >
+            <svg 
+              class="refresh-icon" 
+              [class.spinning]="isNewsRefreshing()"
+              viewBox="0 0 24 24" 
+              fill="none" 
+              stroke="currentColor" 
+              stroke-width="2"
+            >
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+            </svg>
+            <span>{{ isNewsRefreshing() ? 'Syncing IndianAPI...' : 'Refresh News' }}</span>
+          </button>
+        </div>
+
+        <!-- News Loading Skeleton -->
+        @if (newsLoadingState() === 'loading') {
+          <div class="skeleton-grid">
+            @for (item of [1, 2, 3, 4, 5, 6]; track item) {
+              <div class="skeleton-card">
+                <div class="skeleton-image shimmer"></div>
+                <div class="skeleton-content">
+                  <div class="skeleton-line shimmer short"></div>
+                  <div class="skeleton-line shimmer"></div>
+                  <div class="skeleton-line shimmer medium"></div>
+                </div>
+              </div>
+            }
           </div>
         }
-      </div>
-    }
 
-    <!-- State 2: Success Data Grid -->
-    @if (loadingState() === 'success' && newsResponse(); as res) {
-      <div class="news-grid">
-        @for (item of res.news; track item.id || item.sourceUrl) {
-          <app-stock-news-card [newsItem]="item"></app-stock-news-card>
+        <!-- News Data Grid -->
+        @if (newsLoadingState() === 'success' && newsResponse(); as res) {
+          <div class="news-grid">
+            @for (item of res.news; track item.id || item.sourceUrl) {
+              <app-stock-news-card [newsItem]="item"></app-stock-news-card>
+            }
+          </div>
         }
-      </div>
-    }
 
-    <!-- State 3: Empty State -->
-    @if (loadingState() === 'empty') {
-      <div class="state-card empty-state">
-        <div class="state-icon-wrapper">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="state-svg">
-            <path d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1m2 13a2 2 0 0 1-2-2V7m2 13a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path>
-          </svg>
-        </div>
-        <h3 class="state-title">No News Available</h3>
-        <p class="state-description">
-          We couldn't find any recent news stories for <strong>{{ selectedSymbol() }}</strong> on <strong>{{ selectedExchange() }}</strong>.
-        </p>
-        <button type="button" class="action-btn" (click)="refreshNews()">
-          Check IndianAPI for Updates
-        </button>
-      </div>
-    }
+        <!-- News Empty State -->
+        @if (newsLoadingState() === 'empty') {
+          <div class="state-card empty-state">
+            <div class="state-icon-wrapper">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="state-svg">
+                <path d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1m2 13a2 2 0 0 1-2-2V7m2 13a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path>
+              </svg>
+            </div>
+            <h3 class="state-title">No News Available</h3>
+            <p class="state-description">
+              We couldn't find any recent news stories for <strong>{{ selectedSymbol() }}</strong> on <strong>{{ selectedExchange() }}</strong>.
+            </p>
+            <button type="button" class="action-btn" (click)="fetchNews(true)">
+              Check IndianAPI for Updates
+            </button>
+          </div>
+        }
 
-    <!-- State 4: Error State -->
-    @if (loadingState() === 'error') {
-      <div class="state-card error-state">
-        <div class="state-icon-wrapper error-icon-bg">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="state-svg error-color">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="8" x2="12" y2="12"></line>
-            <line x1="12" y1="16" x2="12.01" y2="16"></line>
-          </svg>
-        </div>
-        <h3 class="state-title">Unable to Fetch News</h3>
-        <p class="state-description">{{ errorMessage() }}</p>
-        <button type="button" class="action-btn" (click)="refreshNews()">
-          Try Again
-        </button>
+        <!-- News Error State -->
+        @if (newsLoadingState() === 'error') {
+          <div class="state-card error-state">
+            <div class="state-icon-wrapper error-icon-bg">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="state-svg error-color">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+            </div>
+            <h3 class="state-title">Unable to Fetch News</h3>
+            <p class="state-description">{{ newsErrorMessage() }}</p>
+            <button type="button" class="action-btn" (click)="fetchNews(true)">
+              Try Again
+            </button>
+          </div>
+        }
       </div>
     }
   </main>

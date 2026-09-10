@@ -4,6 +4,7 @@ using StockLens_BusinessLayer.MapperProfile;
 using StockLens_BusinessLayer.Services;
 using StockLens_DataLayer.Interfaces;
 using StockLens_Infrastructure.DataContext;
+using StockLens_Infrastructure.ExternalServices.BharatStock;
 using StockLens_Infrastructure.ExternalServices.IndianApi;
 using StockLens_Infrastructure.Repositories;
 using StockLens_Infrastructure.Seeders;
@@ -26,7 +27,7 @@ builder.Services.AddDbContext<StockLensDataContext>(options =>
 // Configure IndianAPI Settings
 builder.Services.Configure<IndianApiSettings>(builder.Configuration.GetSection(IndianApiSettings.SectionName));
 
-// Configure IndianAPI HTTP Client
+// Configure IndianAPI HTTP Clients
 builder.Services.AddHttpClient<IIndianApiNewsClient, IndianApiNewsClient>((serviceProvider, client) =>
 {
     var config = builder.Configuration.GetSection(IndianApiSettings.SectionName).Get<IndianApiSettings>() ?? new IndianApiSettings();
@@ -34,6 +35,41 @@ builder.Services.AddHttpClient<IIndianApiNewsClient, IndianApiNewsClient>((servi
     client.Timeout = TimeSpan.FromSeconds(config.TimeoutSeconds > 0 ? config.TimeoutSeconds : 15);
     client.DefaultRequestHeaders.Add("Accept", "application/json");
 });
+
+builder.Services.AddHttpClient<IIndianApiShareholdingClient, IndianApiShareholdingClient>((serviceProvider, client) =>
+{
+    var config = builder.Configuration.GetSection(IndianApiSettings.SectionName).Get<IndianApiSettings>() ?? new IndianApiSettings();
+    client.BaseAddress = new Uri(config.BaseUrl.TrimEnd('/') + "/");
+    client.Timeout = TimeSpan.FromSeconds(config.TimeoutSeconds > 0 ? config.TimeoutSeconds : 15);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+});
+
+// Configure BharatStock Settings
+builder.Services.Configure<BharatStockSettings>(builder.Configuration.GetSection(BharatStockSettings.SectionName));
+
+// Configure BharatStock Provider (Strictly Mock in Development ONLY when UseMockData is true; Live Provider for Production)
+var bharatConfig = builder.Configuration.GetSection(BharatStockSettings.SectionName).Get<BharatStockSettings>() ?? new BharatStockSettings();
+if (builder.Environment.IsDevelopment() && bharatConfig.UseMockData)
+{
+    builder.Services.AddScoped<IShareholdingProvider, MockShareholdingProvider>();
+    builder.Services.AddScoped<IFinancialProvider, MockFinancialProvider>();
+}
+else
+{
+    builder.Services.AddHttpClient<IShareholdingProvider, BharatStockShareholdingProvider>((serviceProvider, client) =>
+    {
+        client.BaseAddress = new Uri(bharatConfig.BaseUrl.TrimEnd('/') + "/");
+        client.Timeout = TimeSpan.FromSeconds(bharatConfig.TimeoutSeconds > 0 ? bharatConfig.TimeoutSeconds : 15);
+        client.DefaultRequestHeaders.Add("Accept", "application/json");
+    });
+
+    builder.Services.AddHttpClient<IFinancialProvider, BharatStockFinancialProvider>((serviceProvider, client) =>
+    {
+        client.BaseAddress = new Uri(bharatConfig.BaseUrl.TrimEnd('/') + "/");
+        client.Timeout = TimeSpan.FromSeconds(bharatConfig.TimeoutSeconds > 0 ? bharatConfig.TimeoutSeconds : 15);
+        client.DefaultRequestHeaders.Add("Accept", "application/json");
+    });
+}
 
 // Register Yahoo Finance HTTP Client
 builder.Services.AddHttpClient<StockLens_Infrastructure.ExternalServices.YahooFinanceApi.IYahooFinanceClient, StockLens_Infrastructure.ExternalServices.YahooFinanceApi.YahooFinanceClient>(client =>
@@ -45,6 +81,8 @@ builder.Services.AddHttpClient<StockLens_Infrastructure.ExternalServices.YahooFi
 builder.Services.AddScoped<IStockRepository, StockRepository>();
 builder.Services.AddScoped<IStockNewsRepository, StockNewsRepository>();
 builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
+builder.Services.AddScoped<IStockShareholdingRepository, StockShareholdingRepository>();
+builder.Services.AddScoped<IStockFinancialRepository, StockFinancialRepository>();
 
 // Register Seeders
 builder.Services.AddTransient<CompanyMasterSeeder>();
@@ -52,6 +90,8 @@ builder.Services.AddTransient<CompanyMasterSeeder>();
 // Register Business Services
 builder.Services.AddScoped<IStockNewsService, StockNewsService>();
 builder.Services.AddScoped<ICompanyService, CompanyService>();
+builder.Services.AddScoped<IStockShareholdingService, StockShareholdingService>();
+builder.Services.AddScoped<IStockCashflowService, StockCashflowService>();
 
 // Register AutoMapper
 builder.Services.AddAutoMapper(cfg => cfg.AddProfile<MapperProfile>());

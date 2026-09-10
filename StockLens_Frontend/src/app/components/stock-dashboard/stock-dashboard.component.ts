@@ -4,19 +4,36 @@ import { FormsModule } from '@angular/forms';
 import { Subject, Subscription, of } from 'rxjs';
 import { debounceTime, distinctUntilChanged, switchMap, catchError } from 'rxjs/operators';
 import { StockNewsService } from '../../services/stock-news.service';
+import { StockShareholdingService } from '../../services/stock-shareholding.service';
+import { StockCashflowService } from '../../services/stock-cashflow.service';
 import { Stock, Company, StockNewsResponse, LoadingState } from '../../models/stock-news.model';
+import { StockShareholdingResponse } from '../../models/stock-shareholding.model';
+import { StockCashflowResponse } from '../../models/stock-cashflow.model';
 import { StockNewsCardComponent } from '../stock-news-card/stock-news-card.component';
+import { StockShareholdingCardComponent } from '../stock-shareholding-card/stock-shareholding-card.component';
+import { StockCashflowCardComponent } from '../stock-cashflow-card/stock-cashflow-card.component';
 import { TimeAgoPipe } from '../../pipes/time-ago.pipe';
+
+export type DashboardTab = 'cashflow' | 'shareholding' | 'news';
 
 @Component({
   selector: 'app-stock-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, StockNewsCardComponent, TimeAgoPipe],
+  imports: [
+    CommonModule,
+    FormsModule,
+    StockNewsCardComponent,
+    StockShareholdingCardComponent,
+    StockCashflowCardComponent,
+    TimeAgoPipe
+  ],
   templateUrl: './stock-dashboard.component.html',
   styleUrl: './stock-dashboard.component.css'
 })
 export class StockDashboardComponent implements OnInit, OnDestroy {
   private readonly newsService = inject(StockNewsService);
+  private readonly shareholdingService = inject(StockShareholdingService);
+  private readonly cashflowService = inject(StockCashflowService);
 
   // Quick select stocks
   readonly quickStocks = [
@@ -28,15 +45,34 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     { symbol: 'ICICIBANK', name: 'ICICI Bank', exchange: 'NSE' }
   ];
 
+  activeTab = signal<DashboardTab>('cashflow');
   availableStocks = signal<Stock[]>([]);
   selectedSymbol = signal<string>('RELIANCE');
   selectedExchange = signal<string>('NSE');
   searchQuery = signal<string>('');
 
+  // Track loaded symbol per tab to enable on-demand lazy loading
+  private loadedShareholdingSymbol: string = '';
+  private loadedCashflowSymbol: string = '';
+  private loadedNewsSymbol: string = '';
+
+  // Shareholding State
+  shareholdingResponse = signal<StockShareholdingResponse | null>(null);
+  shareholdingLoadingState = signal<LoadingState>('idle');
+  shareholdingErrorMessage = signal<string>('');
+  isShareholdingRefreshing = signal<boolean>(false);
+
+  // Cashflow State
+  cashflowResponse = signal<StockCashflowResponse | null>(null);
+  cashflowLoadingState = signal<LoadingState>('idle');
+  cashflowErrorMessage = signal<string>('');
+  isCashflowRefreshing = signal<boolean>(false);
+
+  // News State
   newsResponse = signal<StockNewsResponse | null>(null);
-  loadingState = signal<LoadingState>('idle');
-  errorMessage = signal<string>('');
-  isRefreshing = signal<boolean>(false);
+  newsLoadingState = signal<LoadingState>('idle');
+  newsErrorMessage = signal<string>('');
+  isNewsRefreshing = signal<boolean>(false);
 
   // Typeahead search
   searchResults = signal<Company[]>([]);
@@ -46,7 +82,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.loadAvailableStocks();
-    this.fetchNews(false);
+    this.fetchActiveTabData(false);
     this.setupSearch();
   }
 
@@ -88,11 +124,33 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     });
   }
 
+  setTab(tab: DashboardTab): void {
+    this.activeTab.set(tab);
+    const currentSymbol = this.selectedSymbol();
+    if (tab === 'shareholding' && this.loadedShareholdingSymbol !== currentSymbol) {
+      this.fetchShareholding(false);
+    } else if (tab === 'cashflow' && this.loadedCashflowSymbol !== currentSymbol) {
+      this.fetchCashflow(false);
+    } else if (tab === 'news' && this.loadedNewsSymbol !== currentSymbol) {
+      this.fetchNews(false);
+    }
+  }
+
   selectStock(symbol: string, exchange: string = 'NSE'): void {
-    this.selectedSymbol.set(symbol.toUpperCase());
-    this.selectedExchange.set(exchange.toUpperCase());
+    const cleanSymbol = symbol.toUpperCase();
+    const cleanExchange = exchange.toUpperCase();
+    this.selectedSymbol.set(cleanSymbol);
+    this.selectedExchange.set(cleanExchange);
     this.searchQuery.set('');
-    this.fetchNews(false);
+    this.searchResults.set([]);
+
+    // Invalidate per-tab caches for the old symbol
+    this.loadedShareholdingSymbol = '';
+    this.loadedCashflowSymbol = '';
+    this.loadedNewsSymbol = '';
+
+    // Fetch ONLY the currently active tab's data
+    this.fetchActiveTabData(false);
   }
 
   toggleExchange(exchange: string): void {
@@ -100,7 +158,10 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
       this.selectedExchange.set(exchange);
       this.searchQuery.set('');
       this.searchResults.set([]);
-      this.fetchNews(false);
+      this.loadedShareholdingSymbol = '';
+      this.loadedCashflowSymbol = '';
+      this.loadedNewsSymbol = '';
+      this.fetchActiveTabData(false);
     }
   }
 
@@ -114,28 +175,101 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     const query = this.searchQuery().trim();
     if (query) {
       this.selectedSymbol.set(query.toUpperCase());
-      this.searchResults.set([]); // Hide dropdown
-      this.fetchNews(false);
+      this.searchResults.set([]);
+      this.loadedShareholdingSymbol = '';
+      this.loadedCashflowSymbol = '';
+      this.loadedNewsSymbol = '';
+      this.fetchActiveTabData(false);
     }
   }
 
   selectSearchResult(company: Company): void {
-    this.searchQuery.set(''); // Clear search box
-    this.searchResults.set([]); // Hide dropdown
+    this.searchQuery.set('');
+    this.searchResults.set([]);
     this.selectStock(company.symbol, this.selectedExchange());
   }
 
-  refreshNews(): void {
-    this.fetchNews(true);
+  fetchActiveTabData(isRefresh: boolean): void {
+    if (this.activeTab() === 'shareholding') {
+      this.fetchShareholding(isRefresh);
+    } else if (this.activeTab() === 'cashflow') {
+      this.fetchCashflow(isRefresh);
+    } else {
+      this.fetchNews(isRefresh);
+    }
   }
 
-  private fetchNews(isRefresh: boolean): void {
+  fetchShareholding(isRefresh: boolean): void {
     if (isRefresh) {
-      this.isRefreshing.set(true);
+      this.isShareholdingRefreshing.set(true);
     } else {
-      this.loadingState.set('loading');
+      this.shareholdingLoadingState.set('loading');
     }
-    this.errorMessage.set('');
+    this.shareholdingErrorMessage.set('');
+
+    const symbol = this.selectedSymbol();
+    const exchange = this.selectedExchange();
+
+    this.shareholdingService.getShareholdingBySymbol(symbol, exchange, isRefresh).subscribe({
+      next: (data) => {
+        this.shareholdingResponse.set(data);
+        this.isShareholdingRefreshing.set(false);
+        this.loadedShareholdingSymbol = symbol;
+        if (data.currentPeriod) {
+          this.shareholdingLoadingState.set('success');
+        } else {
+          this.shareholdingLoadingState.set('empty');
+        }
+      },
+      error: (err) => {
+        this.isShareholdingRefreshing.set(false);
+        this.shareholdingLoadingState.set('error');
+        this.shareholdingErrorMessage.set(
+          err.error?.detail || err.error?.message || 'Failed to retrieve shareholding data from BharatStock. Please try again.'
+        );
+      }
+    });
+  }
+
+  fetchCashflow(isRefresh: boolean): void {
+    if (isRefresh) {
+      this.isCashflowRefreshing.set(true);
+    } else {
+      this.cashflowLoadingState.set('loading');
+    }
+    this.cashflowErrorMessage.set('');
+
+    const symbol = this.selectedSymbol();
+    const exchange = this.selectedExchange();
+
+    this.cashflowService.getCashflowBySymbol(symbol, exchange, isRefresh).subscribe({
+      next: (data) => {
+        this.cashflowResponse.set(data);
+        this.isCashflowRefreshing.set(false);
+        this.loadedCashflowSymbol = symbol;
+        if (data.summary && data.history && data.history.length > 0) {
+          this.cashflowLoadingState.set('success');
+        } else {
+          this.cashflowLoadingState.set('empty');
+        }
+      },
+      error: (err) => {
+        this.isCashflowRefreshing.set(false);
+        this.cashflowLoadingState.set('error');
+        this.cashflowErrorMessage.set(
+          err.error?.detail || err.error?.message || 'Failed to retrieve cash flow and financial data from BharatStock. Please try again.'
+        );
+      }
+    });
+  }
+
+  fetchNews(isRefresh: boolean): void {
+    if (isRefresh) {
+      this.isNewsRefreshing.set(true);
+    } else {
+      this.newsLoadingState.set('loading');
+    }
+    this.newsErrorMessage.set('');
 
     const symbol = this.selectedSymbol();
     const exchange = this.selectedExchange();
@@ -143,17 +277,20 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     this.newsService.getNewsBySymbol(symbol, exchange, 20, 1, isRefresh).subscribe({
       next: (data) => {
         this.newsResponse.set(data);
-        this.isRefreshing.set(false);
+        this.isNewsRefreshing.set(false);
+        this.loadedNewsSymbol = symbol;
         if (data.news && data.news.length > 0) {
-          this.loadingState.set('success');
+          this.newsLoadingState.set('success');
         } else {
-          this.loadingState.set('empty');
+          this.newsLoadingState.set('empty');
         }
       },
       error: (err) => {
-        this.isRefreshing.set(false);
-        this.loadingState.set('error');
-        this.errorMessage.set(err.error?.detail || err.error?.message || 'Failed to retrieve news from backend. Please try again.');
+        this.isNewsRefreshing.set(false);
+        this.newsLoadingState.set('error');
+        this.newsErrorMessage.set(
+          err.error?.detail || err.error?.message || 'Failed to retrieve news from backend. Please try again.'
+        );
       }
     });
   }

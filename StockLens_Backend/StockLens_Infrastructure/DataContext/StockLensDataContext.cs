@@ -14,6 +14,8 @@ namespace StockLens_Infrastructure.DataContext
         public DbSet<Company> CompanyMaster => Set<Company>();
         public DbSet<Stock> Stocks => Set<Stock>();
         public DbSet<StockNews> StockNews => Set<StockNews>();
+        public DbSet<StockShareholding> StockShareholdings => Set<StockShareholding>();
+        public DbSet<StockFinancial> StockFinancials => Set<StockFinancial>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -150,6 +152,155 @@ namespace StockLens_Infrastructure.DataContext
                 entity.HasIndex(sn => new { sn.StockId, sn.SourceUrl })
                     .IsUnique()
                     .HasDatabaseName("IX_StockNews_StockId_SourceUrl");
+            });
+
+            // StockShareholding configuration
+            modelBuilder.Entity<StockShareholding>(entity =>
+            {
+                entity.ToTable("StockShareholdings");
+                entity.HasKey(sh => sh.Id);
+
+                entity.Property(sh => sh.PeriodKey)
+                    .HasMaxLength(50)
+                    .IsRequired();
+
+                entity.Property(sh => sh.Period)
+                    .HasMaxLength(100)
+                    .IsRequired();
+
+                entity.Property(sh => sh.PeriodType)
+                    .HasMaxLength(50);
+
+                entity.Property(sh => sh.PromoterHolding)
+                    .HasPrecision(6, 2)
+                    .IsRequired(false);
+
+                entity.Property(sh => sh.FiiHolding)
+                    .HasPrecision(6, 2)
+                    .IsRequired(false);
+
+                entity.Property(sh => sh.DiiHolding)
+                    .HasPrecision(6, 2)
+                    .IsRequired(false);
+
+                entity.Property(sh => sh.GovernmentHolding)
+                    .HasPrecision(6, 2)
+                    .IsRequired(false);
+
+                entity.Property(sh => sh.PublicHolding)
+                    .HasPrecision(6, 2)
+                    .IsRequired(false);
+
+                entity.Property(sh => sh.OtherHolding)
+                    .HasPrecision(6, 2)
+                    .IsRequired(false);
+
+                entity.Property(sh => sh.ShareholdersCount)
+                    .IsRequired(false);
+
+                entity.Property(sh => sh.Source)
+                    .HasMaxLength(100)
+                    .IsRequired();
+
+                // Relationship
+                entity.HasOne(sh => sh.Stock)
+                    .WithMany(s => s.Shareholdings)
+                    .HasForeignKey(sh => sh.StockId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                // Deterministic unique constraint on (StockId, PeriodKey)
+                entity.HasIndex(sh => new { sh.StockId, sh.PeriodKey })
+                    .IsUnique()
+                    .HasDatabaseName("IX_StockShareholdings_StockId_PeriodKey");
+
+                // Index for chronological ordering and historical queries
+                entity.HasIndex(sh => new { sh.StockId, sh.PeriodDate })
+                    .HasDatabaseName("IX_StockShareholdings_StockId_PeriodDate");
+
+                // Index for latest sync check
+                entity.HasIndex(sh => new { sh.StockId, sh.LastSyncedAt })
+                    .HasDatabaseName("IX_StockShareholdings_StockId_LastSyncedAt");
+            });
+
+            // StockFinancial configuration
+            modelBuilder.Entity<StockFinancial>(entity =>
+            {
+                entity.ToTable("StockFinancials");
+                entity.HasKey(f => f.Id);
+
+                entity.Property(f => f.PeriodKey)
+                    .HasMaxLength(50)
+                    .IsRequired();
+
+                entity.Property(f => f.PeriodType)
+                    .HasMaxLength(50)
+                    .IsRequired();
+
+                entity.Property(f => f.FiscalYear)
+                    .HasMaxLength(20)
+                    .IsRequired();
+
+                entity.Property(f => f.Revenue)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.NetProfit)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.Eps)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.NetProfitAttributableToMinorityInterest)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.OtherEquity)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.OperatingCashFlow)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.Capex)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.FreeCashFlow)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.NetCashFlow)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.ConsolidationType)
+                    .HasMaxLength(50);
+
+                entity.Property(f => f.Source)
+                    .HasMaxLength(100)
+                    .IsRequired();
+
+                // Relationship
+                entity.HasOne(f => f.Stock)
+                    .WithMany(s => s.Financials)
+                    .HasForeignKey(f => f.StockId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                // Deterministic unique constraint on (StockId, PeriodKey)
+                entity.HasIndex(f => new { f.StockId, f.PeriodKey })
+                    .IsUnique()
+                    .HasDatabaseName("IX_StockFinancials_StockId_PeriodKey");
+
+                // Index for chronological ordering
+                entity.HasIndex(f => new { f.StockId, f.PeriodEndDate })
+                    .HasDatabaseName("IX_StockFinancials_StockId_PeriodEndDate");
+
+                // Index for latest sync check
+                entity.HasIndex(f => new { f.StockId, f.LastSyncedAt })
+                    .HasDatabaseName("IX_StockFinancials_StockId_LastSyncedAt");
             });
         }
     }

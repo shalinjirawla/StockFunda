@@ -3,4 +3,5 @@
   <Project Path="StockLens_BusinessLayer/StockLens_BusinessLayer.csproj" />
   <Project Path="StockLens_DataLayer/StockLens_DataLayer.csproj" />
   <Project Path="StockLens_Infrastructure/StockLens_Infrastructure.csproj" />
+  <Project Path="StockLens_UnitTests/StockLens_UnitTests.csproj" />
 </Solution>

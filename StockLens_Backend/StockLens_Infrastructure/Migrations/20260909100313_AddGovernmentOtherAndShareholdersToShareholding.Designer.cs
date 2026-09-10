@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using StockLens_Infrastructure.DataContext;
 
@@ -11,9 +12,11 @@ using StockLens_Infrastructure.DataContext;
 namespace StockLens_Infrastructure.Migrations
 {
     [DbContext(typeof(StockLensDataContext))]
-    partial class StockLensDataContextModelSnapshot : ModelSnapshot
+    [Migration("20260909100313_AddGovernmentOtherAndShareholdersToShareholding")]
+    partial class AddGovernmentOtherAndShareholdersToShareholding
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -22,7 +25,7 @@ namespace StockLens_Infrastructure.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.Entity("StockLens_DataLayer.Entities.Company", b =>
+            modelBuilder.Entity("StockLens_DataLayer.Entities.Stock", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -38,50 +41,15 @@ namespace StockLens_Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("Industry")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("LogoUrl")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
-
-                    b.Property<string>("Symbol")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Symbol")
-                        .IsUnique()
-                        .HasDatabaseName("IX_Company_Symbol");
-
-                    b.ToTable("CompanyMaster", (string)null);
-                });
-
-            modelBuilder.Entity("StockLens_DataLayer.Entities.Stock", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("CompanyId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
                     b.Property<string>("Exchange")
                         .IsRequired()
                         .HasMaxLength(10)
                         .HasColumnType("nvarchar(10)");
 
+                    b.Property<string>("Industry")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<string>("Symbol")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -91,112 +59,94 @@ namespace StockLens_Infrastructure.Migrations
                         .HasColumnType("datetime2");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("CompanyId");
 
                     b.HasIndex("Symbol", "Exchange")
                         .IsUnique()
                         .HasDatabaseName("IX_Stocks_Symbol_Exchange");
 
                     b.ToTable("Stocks", (string)null);
-                });
 
-            modelBuilder.Entity("StockLens_DataLayer.Entities.StockFinancial", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<decimal?>("Capex")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<string>("ConsolidationType")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<decimal?>("Eps")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<string>("FiscalYear")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<decimal?>("FreeCashFlow")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime>("LastSyncedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<decimal?>("NetCashFlow")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal?>("NetProfit")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal?>("NetProfitAttributableToMinorityInterest")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal?>("OperatingCashFlow")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal?>("OtherEquity")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime?>("PeriodEndDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("PeriodKey")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<string>("PeriodType")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<decimal?>("Revenue")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<string>("Source")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<int>("StockId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("StockId", "LastSyncedAt")
-                        .HasDatabaseName("IX_StockFinancials_StockId_LastSyncedAt");
-
-                    b.HasIndex("StockId", "PeriodEndDate")
-                        .HasDatabaseName("IX_StockFinancials_StockId_PeriodEndDate");
-
-                    b.HasIndex("StockId", "PeriodKey")
-                        .IsUnique()
-                        .HasDatabaseName("IX_StockFinancials_StockId_PeriodKey");
-
-                    b.ToTable("StockFinancials", (string)null);
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            CompanyName = "Reliance Industries Limited",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Exchange = "NSE",
+                            Industry = "Oil & Gas / Conglomerate",
+                            Symbol = "RELIANCE",
+                            UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 2,
+                            CompanyName = "Tata Consultancy Services Limited",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Exchange = "NSE",
+                            Industry = "Information Technology",
+                            Symbol = "TCS",
+                            UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 3,
+                            CompanyName = "Infosys Limited",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Exchange = "NSE",
+                            Industry = "Information Technology",
+                            Symbol = "INFY",
+                            UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 4,
+                            CompanyName = "Tata Motors Limited",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Exchange = "NSE",
+                            Industry = "Automobile",
+                            Symbol = "TATAMOTORS",
+                            UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 5,
+                            CompanyName = "HDFC Bank Limited",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Exchange = "NSE",
+                            Industry = "Banking / Financial Services",
+                            Symbol = "HDFCBANK",
+                            UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 6,
+                            CompanyName = "ICICI Bank Limited",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Exchange = "NSE",
+                            Industry = "Banking / Financial Services",
+                            Symbol = "ICICIBANK",
+                            UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 7,
+                            CompanyName = "Reliance Industries Limited",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Exchange = "BSE",
+                            Industry = "Oil & Gas / Conglomerate",
+                            Symbol = "RELIANCE",
+                            UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = 8,
+                            CompanyName = "Tata Consultancy Services Limited",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Exchange = "BSE",
+                            Industry = "Information Technology",
+                            Symbol = "TCS",
+                            UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        });
                 });
 
             modelBuilder.Entity("StockLens_DataLayer.Entities.StockNews", b =>
@@ -257,13 +207,13 @@ namespace StockLens_Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ExternalNewsId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_StockNews_ExternalNewsId")
+                        .HasFilter("[ExternalNewsId] IS NOT NULL");
+
                     b.HasIndex("PublishedAt")
                         .HasDatabaseName("IX_StockNews_PublishedAt");
-
-                    b.HasIndex("StockId", "ExternalNewsId")
-                        .IsUnique()
-                        .HasDatabaseName("IX_StockNews_StockId_ExternalNewsId")
-                        .HasFilter("[ExternalNewsId] IS NOT NULL");
 
                     b.HasIndex("StockId", "PublishedAt")
                         .HasDatabaseName("IX_StockNews_StockId_PublishedAt");
@@ -359,28 +309,6 @@ namespace StockLens_Infrastructure.Migrations
                     b.ToTable("StockShareholdings", (string)null);
                 });
 
-            modelBuilder.Entity("StockLens_DataLayer.Entities.Stock", b =>
-                {
-                    b.HasOne("StockLens_DataLayer.Entities.Company", "Company")
-                        .WithMany("Stocks")
-                        .HasForeignKey("CompanyId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Company");
-                });
-
-            modelBuilder.Entity("StockLens_DataLayer.Entities.StockFinancial", b =>
-                {
-                    b.HasOne("StockLens_DataLayer.Entities.Stock", "Stock")
-                        .WithMany("Financials")
-                        .HasForeignKey("StockId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Stock");
-                });
-
             modelBuilder.Entity("StockLens_DataLayer.Entities.StockNews", b =>
                 {
                     b.HasOne("StockLens_DataLayer.Entities.Stock", "Stock")
@@ -403,15 +331,8 @@ namespace StockLens_Infrastructure.Migrations
                     b.Navigation("Stock");
                 });
 
-            modelBuilder.Entity("StockLens_DataLayer.Entities.Company", b =>
-                {
-                    b.Navigation("Stocks");
-                });
-
             modelBuilder.Entity("StockLens_DataLayer.Entities.Stock", b =>
                 {
-                    b.Navigation("Financials");
-
                     b.Navigation("News");
 
                     b.Navigation("Shareholdings");
