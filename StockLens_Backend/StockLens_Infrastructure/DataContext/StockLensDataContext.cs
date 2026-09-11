@@ -16,6 +16,7 @@ namespace StockLens_Infrastructure.DataContext
         public DbSet<StockNews> StockNews => Set<StockNews>();
         public DbSet<StockShareholding> StockShareholdings => Set<StockShareholding>();
         public DbSet<StockFinancial> StockFinancials => Set<StockFinancial>();
+        public DbSet<StockBalanceSheet> StockBalanceSheets => Set<StockBalanceSheet>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

@@ -6,15 +6,18 @@ import { debounceTime, distinctUntilChanged, switchMap, catchError } from 'rxjs/
 import { StockNewsService } from '../../services/stock-news.service';
 import { StockShareholdingService } from '../../services/stock-shareholding.service';
 import { StockCashflowService } from '../../services/stock-cashflow.service';
+import { StockFinancialsService } from '../../services/stock-financials.service';
 import { Stock, Company, StockNewsResponse, LoadingState } from '../../models/stock-news.model';
 import { StockShareholdingResponse } from '../../models/stock-shareholding.model';
 import { StockCashflowResponse } from '../../models/stock-cashflow.model';
 import { StockNewsCardComponent } from '../stock-news-card/stock-news-card.component';
 import { StockShareholdingCardComponent } from '../stock-shareholding-card/stock-shareholding-card.component';
 import { StockCashflowCardComponent } from '../stock-cashflow-card/stock-cashflow-card.component';
+import { StockAssetGrowthCardComponent } from '../stock-asset-growth-card/stock-asset-growth-card.component';
+import { BalanceSheetResponseDto } from '../../services/stock-financials.service';
 import { TimeAgoPipe } from '../../pipes/time-ago.pipe';
 
-export type DashboardTab = 'cashflow' | 'shareholding' | 'news';
+export type DashboardTab = 'cashflow' | 'shareholding' | 'news' | 'assets';
 
 @Component({
   selector: 'app-stock-dashboard',
@@ -25,6 +28,7 @@ export type DashboardTab = 'cashflow' | 'shareholding' | 'news';
     StockNewsCardComponent,
     StockShareholdingCardComponent,
     StockCashflowCardComponent,
+    StockAssetGrowthCardComponent,
     TimeAgoPipe
   ],
   templateUrl: './stock-dashboard.component.html',
@@ -34,6 +38,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
   private readonly newsService = inject(StockNewsService);
   private readonly shareholdingService = inject(StockShareholdingService);
   private readonly cashflowService = inject(StockCashflowService);
+  private readonly financialsService = inject(StockFinancialsService);
 
   // Quick select stocks
   readonly quickStocks = [
@@ -45,7 +50,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     { symbol: 'ICICIBANK', name: 'ICICI Bank', exchange: 'NSE' }
   ];
 
-  activeTab = signal<DashboardTab>('cashflow');
+  activeTab = signal<DashboardTab>('assets');
   availableStocks = signal<Stock[]>([]);
   selectedSymbol = signal<string>('RELIANCE');
   selectedExchange = signal<string>('NSE');
@@ -55,6 +60,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
   private loadedShareholdingSymbol: string = '';
   private loadedCashflowSymbol: string = '';
   private loadedNewsSymbol: string = '';
+  private loadedAssetsSymbol: string = '';
 
   // Shareholding State
   shareholdingResponse = signal<StockShareholdingResponse | null>(null);
@@ -67,6 +73,12 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
   cashflowLoadingState = signal<LoadingState>('idle');
   cashflowErrorMessage = signal<string>('');
   isCashflowRefreshing = signal<boolean>(false);
+
+  // Assets State
+  assetsResponse = signal<BalanceSheetResponseDto | null>(null);
+  assetsLoadingState = signal<LoadingState>('idle');
+  assetsErrorMessage = signal<string>('');
+  isAssetsRefreshing = signal<boolean>(false);
 
   // News State
   newsResponse = signal<StockNewsResponse | null>(null);
@@ -194,9 +206,39 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
       this.fetchShareholding(isRefresh);
     } else if (this.activeTab() === 'cashflow') {
       this.fetchCashflow(isRefresh);
+    } else if (this.activeTab() === 'assets') {
+      this.fetchAssets(isRefresh);
     } else {
       this.fetchNews(isRefresh);
     }
+  }
+
+  fetchAssets(isRefresh: boolean): void {
+    const symbol = this.selectedSymbol();
+    if (!symbol) return;
+
+    if (isRefresh) {
+      this.isAssetsRefreshing.set(true);
+    } else {
+      this.assetsLoadingState.set('loading');
+    }
+
+    this.assetsErrorMessage.set('');
+
+    this.financialsService.getBalanceSheet(symbol).subscribe({
+      next: (response) => {
+        this.assetsResponse.set(response);
+        this.loadedAssetsSymbol = symbol;
+        this.assetsLoadingState.set('success');
+        this.isAssetsRefreshing.set(false);
+      },
+      error: (err) => {
+        console.error('Error fetching assets:', err);
+        this.assetsErrorMessage.set(err.error?.message || 'Could not fetch asset growth data. Please try again.');
+        this.assetsLoadingState.set('error');
+        this.isAssetsRefreshing.set(false);
+      }
+    });
   }
 
   fetchShareholding(isRefresh: boolean): void {

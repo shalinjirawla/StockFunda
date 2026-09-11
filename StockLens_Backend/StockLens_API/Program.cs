@@ -1,11 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using StockLens_BusinessLayer.Interfaces;
-using StockLens_BusinessLayer.MapperProfile;
 using StockLens_BusinessLayer.Services;
 using StockLens_DataLayer.Interfaces;
 using StockLens_Infrastructure.DataContext;
 using StockLens_Infrastructure.ExternalServices.BharatStock;
 using StockLens_Infrastructure.ExternalServices.IndianApi;
+using StockLens_BusinessLayer.MapperProfile;
 using StockLens_Infrastructure.Repositories;
 using StockLens_Infrastructure.Seeders;
 
@@ -83,15 +83,19 @@ builder.Services.AddScoped<IStockNewsRepository, StockNewsRepository>();
 builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
 builder.Services.AddScoped<IStockShareholdingRepository, StockShareholdingRepository>();
 builder.Services.AddScoped<IStockFinancialRepository, StockFinancialRepository>();
+builder.Services.AddScoped<IStockBalanceSheetRepository, StockBalanceSheetRepository>();
 
 // Register Seeders
 builder.Services.AddTransient<CompanyMasterSeeder>();
+builder.Services.AddHttpClient<IIndianApiNewsClient, IndianApiNewsClient>();
+builder.Services.AddHttpClient<IIndianApiFinancialsClient, IndianApiFinancialsClient>();
 
 // Register Business Services
 builder.Services.AddScoped<IStockNewsService, StockNewsService>();
 builder.Services.AddScoped<ICompanyService, CompanyService>();
 builder.Services.AddScoped<IStockShareholdingService, StockShareholdingService>();
 builder.Services.AddScoped<IStockCashflowService, StockCashflowService>();
+builder.Services.AddScoped<IStockBalanceSheetService, StockBalanceSheetService>();
 
 // Register AutoMapper
 builder.Services.AddAutoMapper(cfg => cfg.AddProfile<MapperProfile>());
