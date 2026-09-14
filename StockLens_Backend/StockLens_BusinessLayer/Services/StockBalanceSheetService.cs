@@ -16,56 +16,142 @@ namespace StockLens_BusinessLayer.Services
 {
     public class StockBalanceSheetService : IStockBalanceSheetService
     {
-        private readonly IIndianApiFinancialsClient _apiClient;
+        private readonly IIndianApiBalanceSheetClient _apiClient;
         private readonly IStockRepository _stockRepository;
         private readonly IStockBalanceSheetRepository _balanceSheetRepository;
+        private readonly ICompanyRepository _companyRepository;
         private readonly ILogger<StockBalanceSheetService> _logger;
 
         public StockBalanceSheetService(
-            IIndianApiFinancialsClient apiClient, 
+            IIndianApiBalanceSheetClient apiClient, 
             IStockRepository stockRepository,
             IStockBalanceSheetRepository balanceSheetRepository,
+            ICompanyRepository companyRepository,
             ILogger<StockBalanceSheetService> logger)
         {
             _apiClient = apiClient;
             _stockRepository = stockRepository;
             _balanceSheetRepository = balanceSheetRepository;
+            _companyRepository = companyRepository;
             _logger = logger;
         }
 
-        public async Task<BalanceSheetResponseDto> GetBalanceSheetAsync(string symbol, CancellationToken cancellationToken = default)
+        public async Task<BalanceSheetResponseDto> GetBalanceSheetAsync(
+            string symbol,
+            string? exchange = "NSE",
+            bool forceRefresh = false,
+            CancellationToken cancellationToken = default)
         {
-            var result = new BalanceSheetResponseDto { Symbol = symbol };
-            
             try
             {
                 var cleanSymbol = symbol.Trim().ToUpperInvariant();
-                var stock = await _stockRepository.GetBySymbolAsync(cleanSymbol);
+                var cleanExchange = string.IsNullOrWhiteSpace(exchange) ? "NSE" : exchange.Trim().ToUpperInvariant();
+                
+                var stock = await _stockRepository.GetBySymbolAsync(cleanSymbol, cleanExchange);
                 
                 if (stock == null)
                 {
-                    result.ErrorMessage = $"Stock with symbol {cleanSymbol} not found in database.";
-                    return result;
+                    _logger.LogInformation("Stock {Symbol} ({Exchange}) not found in DB. Auto-registering stock.", cleanSymbol, cleanExchange);
+                    var existingCompany = await _companyRepository.GetCompanyBySymbolAsync(cleanSymbol);
+                    stock = new Stock
+                    {
+                        Symbol = cleanSymbol,
+                        Exchange = cleanExchange,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
+
+                    if (existingCompany != null)
+                    {
+                        stock.CompanyId = existingCompany.Id;
+                        stock.Company = existingCompany;
+                    }
+                    else
+                    {
+                        stock.Company = new Company
+                        {
+                            CompanyName = $"{cleanSymbol} Limited",
+                            Symbol = cleanSymbol,
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow
+                        };
+                    }
+
+                    stock = await _stockRepository.AddAsync(stock);
+                    await _stockRepository.SaveChangesAsync();
                 }
 
+                return await ProcessBalanceSheetAsync(stock, forceRefresh, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing balance sheet for {Symbol}", symbol);
+                return new BalanceSheetResponseDto 
+                { 
+                    Symbol = symbol,
+                    ErrorMessage = "An error occurred while fetching balance sheet data." 
+                };
+            }
+        }
+
+        public async Task<BalanceSheetResponseDto> GetBalanceSheetByStockIdAsync(
+            int stockId,
+            bool forceRefresh = false,
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var stock = await _stockRepository.GetByIdAsync(stockId);
+                if (stock == null)
+                {
+                    throw new KeyNotFoundException($"Stock with ID {stockId} was not found.");
+                }
+
+                return await ProcessBalanceSheetAsync(stock, forceRefresh, cancellationToken);
+            }
+            catch (KeyNotFoundException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing balance sheet for Stock ID {StockId}", stockId);
+                return new BalanceSheetResponseDto 
+                { 
+                    Symbol = "Unknown",
+                    ErrorMessage = "An error occurred while fetching balance sheet data." 
+                };
+            }
+        }
+
+        private async Task<BalanceSheetResponseDto> ProcessBalanceSheetAsync(Stock stock, bool forceRefresh, CancellationToken cancellationToken)
+        {
+            var result = new BalanceSheetResponseDto { Symbol = stock.Symbol };
+
+            try
+            {
                 // Check DB for recent records
                 var dbRecords = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 3);
 
-                bool needsRefresh = true;
-                if (dbRecords.Any())
+                bool needsRefresh = forceRefresh;
+                if (!needsRefresh && dbRecords.Any())
                 {
                     // Check if data is fresh (synced within last 7 days)
                     var lastSync = dbRecords.Max(b => b.LastSyncedAt);
-                    if ((DateTime.UtcNow - lastSync).TotalDays < 7)
+                    if ((DateTime.UtcNow - lastSync).TotalDays > 7)
                     {
-                        needsRefresh = false;
+                        needsRefresh = true;
                     }
+                }
+                else if (!dbRecords.Any())
+                {
+                    needsRefresh = true;
                 }
 
                 if (needsRefresh)
                 {
-                    _logger.LogInformation("Balance sheet data is missing or stale. Fetching from IndianAPI for {Symbol}", cleanSymbol);
-                    var rawBalanceSheet = await _apiClient.GetBalanceSheetAsync(cleanSymbol, cancellationToken);
+                    _logger.LogInformation("Balance sheet data is missing or stale. Fetching from IndianAPI for {Symbol}", stock.Symbol);
+                    var rawBalanceSheet = await _apiClient.GetBalanceSheetAsync(stock.Symbol, cancellationToken);
                     
                     if (rawBalanceSheet != null && rawBalanceSheet.Count > 0)
                     {
@@ -110,69 +196,67 @@ namespace StockLens_BusinessLayer.Services
                         await _balanceSheetRepository.AddRangeAsync(newRecords);
                         await _balanceSheetRepository.SaveChangesAsync();
                         
-                        // Update our local variable with the fresh records for returning
-                        dbRecords = newRecords.OrderByDescending(b => b.PeriodKey).ToList();
+                        // Fetch fresh data from DB after insertion
+                        dbRecords = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 3);
                     }
                     else if (!dbRecords.Any())
                     {
-                        result.ErrorMessage = "No balance sheet data found from API or Database.";
+                        result.ErrorMessage = $"Data unavailable for {stock.Symbol}. Could not fetch from IndianAPI.";
                         return result;
                     }
                 }
 
-                // Construct Response DTO from dbRecords (which now only contains max 3 records)
-                var sortedDbRecords = dbRecords.OrderBy(b => b.PeriodEndDate).ToList(); // Sort chronologically for UI
-                result.Periods = sortedDbRecords.Select(b => b.FiscalYear).ToList();
-
-                result.LineItems = new List<BalanceSheetLineItemDto>
-                {
-                    new() { Name = "Fixed Assets", Values = sortedDbRecords.Select(b => b.FixedAssets).ToList() },
-                    new() { Name = "CWIP", Values = sortedDbRecords.Select(b => b.Cwip).ToList() },
-                    new() { Name = "Investments", Values = sortedDbRecords.Select(b => b.Investments).ToList() },
-                    new() { Name = "Other Assets", Values = sortedDbRecords.Select(b => b.OtherAssets).ToList() },
-                    new() { Name = "Total Assets", IsTotal = true, Values = sortedDbRecords.Select(b => b.TotalAssets).ToList() }
-                };
-
-                // Add Metadata
-                var latestRecord = sortedDbRecords.LastOrDefault();
-                if (latestRecord != null)
-                {
-                    result.ConsolidationType = latestRecord.ConsolidationType?.ToUpperInvariant() ?? "CONSOLIDATED";
-                    result.LatestPeriodEnd = latestRecord.PeriodEndDate?.ToString("dd MMM yyyy") ?? "";
-                    result.Source = latestRecord.Source ?? "IndianAPI";
-                    
-                    var timeSpan = DateTime.UtcNow - latestRecord.LastSyncedAt;
-                    if (timeSpan.TotalHours < 24)
-                    {
-                        result.LastSyncedAt = $"{(int)timeSpan.TotalHours}h ago";
-                    }
-                    else
-                    {
-                        result.LastSyncedAt = $"{(int)timeSpan.TotalDays}d ago";
-                    }
-                }
-
-                // Calculate YoY Growth Percentage for Total Assets
-                if (sortedDbRecords.Count >= 2)
-                {
-                    // Assuming sortedDbRecords is sorted oldest to newest (by PeriodEndDate ascending)
-                    var latest = sortedDbRecords.Last().TotalAssets;
-                    var previous = sortedDbRecords[^2].TotalAssets;
-                    
-                    if (latest != null && previous != null && previous != 0)
-                    {
-                        result.AssetGrowthPercentage = ((latest - previous) / Math.Abs(previous.Value)) * 100;
-                    }
-                }
-
-                return result;
+                return MapToResponseDto(stock, dbRecords.ToList());
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching balance sheet for {Symbol}", symbol);
-                result.ErrorMessage = "An internal error occurred while fetching balance sheet.";
+                _logger.LogError(ex, "Error in ProcessBalanceSheetAsync for {Symbol}", stock.Symbol);
+                result.ErrorMessage = "An error occurred while processing balance sheet data.";
                 return result;
             }
+        }
+
+        private BalanceSheetResponseDto MapToResponseDto(Stock stock, List<StockBalanceSheet> dbRecords)
+        {
+            var result = new BalanceSheetResponseDto { Symbol = stock.Symbol };
+
+            // Construct Response DTO from dbRecords (which now only contains max 3 records)
+            var sortedDbRecords = dbRecords.OrderBy(b => b.PeriodEndDate).ToList(); // Sort chronologically for UI
+            result.Periods = sortedDbRecords.Select(b => b.FiscalYear).ToList();
+
+            result.LineItems = new List<BalanceSheetLineItemDto>
+            {
+                new() { Name = "Fixed Assets", Values = sortedDbRecords.Select(b => b.FixedAssets).ToList() },
+                new() { Name = "CWIP", Values = sortedDbRecords.Select(b => b.Cwip).ToList() },
+                new() { Name = "Investments", Values = sortedDbRecords.Select(b => b.Investments).ToList() },
+                new() { Name = "Other Assets", Values = sortedDbRecords.Select(b => b.OtherAssets).ToList() },
+                new() { Name = "Total Assets", IsTotal = true, Values = sortedDbRecords.Select(b => b.TotalAssets).ToList() }
+            };
+
+            // Add Metadata
+            var latestRecord = sortedDbRecords.LastOrDefault();
+            if (latestRecord != null)
+            {
+                result.ConsolidationType = latestRecord.ConsolidationType?.ToUpperInvariant() ?? "CONSOLIDATED";
+                result.LatestPeriodEnd = latestRecord.PeriodEndDate?.ToString("dd MMM yyyy") ?? "";
+                result.Source = latestRecord.Source ?? "IndianAPI";
+                result.LastSyncedAt = latestRecord.LastSyncedAt.ToString("O");
+            }
+
+            // Calculate YoY Growth Percentage for Total Assets
+            if (sortedDbRecords.Count >= 2)
+            {
+                // Assuming sortedDbRecords is sorted oldest to newest (by PeriodEndDate ascending)
+                var latest = sortedDbRecords.Last().TotalAssets;
+                var previous = sortedDbRecords[^2].TotalAssets;
+                
+                if (latest != null && previous != null && previous != 0)
+                {
+                    result.AssetGrowthPercentage = ((latest - previous) / Math.Abs(previous.Value)) * 100;
+                }
+            }
+
+            return result;
         }
 
         private List<(string PeriodStr, DateTime ParsedDate)> ExtractPeriods(Dictionary<string, Dictionary<string, decimal?>> rawBalanceSheet)

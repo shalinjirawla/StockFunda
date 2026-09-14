@@ -17,6 +17,7 @@ namespace StockLens_Infrastructure.DataContext
         public DbSet<StockShareholding> StockShareholdings => Set<StockShareholding>();
         public DbSet<StockFinancial> StockFinancials => Set<StockFinancial>();
         public DbSet<StockBalanceSheet> StockBalanceSheets => Set<StockBalanceSheet>();
+        public DbSet<StockPriceHistory> StockPriceHistories => Set<StockPriceHistory>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -302,6 +303,37 @@ namespace StockLens_Infrastructure.DataContext
                 // Index for latest sync check
                 entity.HasIndex(f => new { f.StockId, f.LastSyncedAt })
                     .HasDatabaseName("IX_StockFinancials_StockId_LastSyncedAt");
+            });
+            // StockPriceHistory configuration
+            modelBuilder.Entity<StockPriceHistory>(entity =>
+            {
+                entity.ToTable("StockPriceHistories");
+                entity.HasKey(p => p.Id);
+
+                entity.Property(p => p.Open)
+                    .HasPrecision(18, 4);
+
+                entity.Property(p => p.High)
+                    .HasPrecision(18, 4);
+
+                entity.Property(p => p.Low)
+                    .HasPrecision(18, 4);
+
+                entity.Property(p => p.Close)
+                    .HasPrecision(18, 4);
+
+                entity.Property(p => p.Source)
+                    .HasMaxLength(50)
+                    .IsRequired();
+
+                entity.HasOne(p => p.Stock)
+                    .WithMany()
+                    .HasForeignKey(p => p.StockId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(p => new { p.StockId, p.Date })
+                    .IsUnique()
+                    .HasDatabaseName("IX_StockPriceHistories_StockId_Date");
             });
         }
     }

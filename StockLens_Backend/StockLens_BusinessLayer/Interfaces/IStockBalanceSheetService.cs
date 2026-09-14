@@ -6,6 +6,14 @@ namespace StockLens_BusinessLayer.Interfaces
 {
     public interface IStockBalanceSheetService
     {
-        Task<BalanceSheetResponseDto> GetBalanceSheetAsync(string symbol, CancellationToken cancellationToken = default);
+        Task<BalanceSheetResponseDto> GetBalanceSheetAsync(
+            string symbol,
+            string? exchange = "NSE",
+            bool forceRefresh = false,
+            CancellationToken cancellationToken = default);
+        Task<BalanceSheetResponseDto> GetBalanceSheetByStockIdAsync(
+            int stockId,
+            bool forceRefresh = false,
+            CancellationToken cancellationToken = default);
     }
 }

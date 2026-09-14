@@ -9,11 +9,11 @@ using System.Threading.Tasks;
 
 namespace StockLens_Infrastructure.ExternalServices.IndianApi
 {
-    public class IndianApiFinancialsClient : IIndianApiFinancialsClient
+    public class IndianApiBalanceSheetClient : IIndianApiBalanceSheetClient
     {
         private readonly HttpClient _httpClient;
         private readonly IndianApiSettings _settings;
-        private readonly ILogger<IndianApiFinancialsClient> _logger;
+        private readonly ILogger<IIndianApiBalanceSheetClient> _logger;
 
         private static readonly JsonSerializerOptions JsonOptions = new()
         {
@@ -21,10 +21,10 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
             NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString
         };
 
-        public IndianApiFinancialsClient(
+        public IndianApiBalanceSheetClient(
             HttpClient httpClient,
             IOptions<IndianApiSettings> settings,
-            ILogger<IndianApiFinancialsClient> logger)
+            ILogger<IIndianApiBalanceSheetClient> logger)
         {
             _httpClient = httpClient;
             _settings = settings.Value;

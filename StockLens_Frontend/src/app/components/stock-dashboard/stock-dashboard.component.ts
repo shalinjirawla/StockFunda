@@ -6,7 +6,7 @@ import { debounceTime, distinctUntilChanged, switchMap, catchError } from 'rxjs/
 import { StockNewsService } from '../../services/stock-news.service';
 import { StockShareholdingService } from '../../services/stock-shareholding.service';
 import { StockCashflowService } from '../../services/stock-cashflow.service';
-import { StockFinancialsService } from '../../services/stock-financials.service';
+import { StockBalanceSheetService } from '../../services/stock-balancesheet.service';
 import { Stock, Company, StockNewsResponse, LoadingState } from '../../models/stock-news.model';
 import { StockShareholdingResponse } from '../../models/stock-shareholding.model';
 import { StockCashflowResponse } from '../../models/stock-cashflow.model';
@@ -14,10 +14,11 @@ import { StockNewsCardComponent } from '../stock-news-card/stock-news-card.compo
 import { StockShareholdingCardComponent } from '../stock-shareholding-card/stock-shareholding-card.component';
 import { StockCashflowCardComponent } from '../stock-cashflow-card/stock-cashflow-card.component';
 import { StockAssetGrowthCardComponent } from '../stock-asset-growth-card/stock-asset-growth-card.component';
-import { BalanceSheetResponseDto } from '../../services/stock-financials.service';
+import { StockPriceChartComponent } from '../stock-price-chart/stock-price-chart.component';
+import { BalanceSheetResponseDto } from '../../services/stock-balancesheet.service';
 import { TimeAgoPipe } from '../../pipes/time-ago.pipe';
 
-export type DashboardTab = 'cashflow' | 'shareholding' | 'news' | 'assets';
+export type DashboardTab = 'cashflow' | 'shareholding' | 'news' | 'assets' | 'prices';
 
 @Component({
   selector: 'app-stock-dashboard',
@@ -29,6 +30,7 @@ export type DashboardTab = 'cashflow' | 'shareholding' | 'news' | 'assets';
     StockShareholdingCardComponent,
     StockCashflowCardComponent,
     StockAssetGrowthCardComponent,
+    StockPriceChartComponent,
     TimeAgoPipe
   ],
   templateUrl: './stock-dashboard.component.html',
@@ -38,7 +40,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
   private readonly newsService = inject(StockNewsService);
   private readonly shareholdingService = inject(StockShareholdingService);
   private readonly cashflowService = inject(StockCashflowService);
-  private readonly financialsService = inject(StockFinancialsService);
+  private readonly financialsService = inject(StockBalanceSheetService);
 
   // Quick select stocks
   readonly quickStocks = [
@@ -50,7 +52,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     { symbol: 'ICICIBANK', name: 'ICICI Bank', exchange: 'NSE' }
   ];
 
-  activeTab = signal<DashboardTab>('assets');
+  activeTab = signal<DashboardTab>('prices');
   availableStocks = signal<Stock[]>([]);
   selectedSymbol = signal<string>('RELIANCE');
   selectedExchange = signal<string>('NSE');
@@ -145,6 +147,8 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
       this.fetchCashflow(false);
     } else if (tab === 'news' && this.loadedNewsSymbol !== currentSymbol) {
       this.fetchNews(false);
+    } else if (tab === 'assets' && this.loadedAssetsSymbol !== currentSymbol) {
+      this.fetchBalanceSheet(false);
     }
   }
 
@@ -207,14 +211,15 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     } else if (this.activeTab() === 'cashflow') {
       this.fetchCashflow(isRefresh);
     } else if (this.activeTab() === 'assets') {
-      this.fetchAssets(isRefresh);
-    } else {
+      this.fetchBalanceSheet(isRefresh);
+    } else if (this.activeTab() === 'news') {
       this.fetchNews(isRefresh);
     }
   }
 
-  fetchAssets(isRefresh: boolean): void {
+  fetchBalanceSheet(isRefresh: boolean): void {
     const symbol = this.selectedSymbol();
+    const exchange = this.selectedExchange();
     if (!symbol) return;
 
     if (isRefresh) {
@@ -225,7 +230,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
 
     this.assetsErrorMessage.set('');
 
-    this.financialsService.getBalanceSheet(symbol).subscribe({
+    this.financialsService.getBalanceSheet(symbol, exchange, isRefresh).subscribe({
       next: (response) => {
         this.assetsResponse.set(response);
         this.loadedAssetsSymbol = symbol;
@@ -234,7 +239,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
       },
       error: (err) => {
         console.error('Error fetching assets:', err);
-        this.assetsErrorMessage.set(err.error?.message || 'Could not fetch asset growth data. Please try again.');
+        this.assetsErrorMessage.set(err.error?.message || 'Could not fetch asset data. Please try again.');
         this.assetsLoadingState.set('error');
         this.isAssetsRefreshing.set(false);
       }

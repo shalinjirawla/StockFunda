@@ -84,11 +84,13 @@ builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
 builder.Services.AddScoped<IStockShareholdingRepository, StockShareholdingRepository>();
 builder.Services.AddScoped<IStockFinancialRepository, StockFinancialRepository>();
 builder.Services.AddScoped<IStockBalanceSheetRepository, StockBalanceSheetRepository>();
+builder.Services.AddScoped<IStockPriceHistoryRepository, StockPriceHistoryRepository>();
 
 // Register Seeders
 builder.Services.AddTransient<CompanyMasterSeeder>();
 builder.Services.AddHttpClient<IIndianApiNewsClient, IndianApiNewsClient>();
-builder.Services.AddHttpClient<IIndianApiFinancialsClient, IndianApiFinancialsClient>();
+builder.Services.AddHttpClient<IIndianApiBalanceSheetClient, IndianApiBalanceSheetClient>();
+builder.Services.AddHttpClient<IIndianApiHistoricalDataClient, IndianApiHistoricalDataClient>();
 
 // Register Business Services
 builder.Services.AddScoped<IStockNewsService, StockNewsService>();
@@ -96,6 +98,7 @@ builder.Services.AddScoped<ICompanyService, CompanyService>();
 builder.Services.AddScoped<IStockShareholdingService, StockShareholdingService>();
 builder.Services.AddScoped<IStockCashflowService, StockCashflowService>();
 builder.Services.AddScoped<IStockBalanceSheetService, StockBalanceSheetService>();
+builder.Services.AddScoped<IStockPriceHistoryService, StockPriceHistoryService>();
 
 // Register AutoMapper
 builder.Services.AddAutoMapper(cfg => cfg.AddProfile<MapperProfile>());

@@ -1,12 +1,13 @@
 import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { BalanceSheetResponseDto } from '../../services/stock-financials.service';
+import { BalanceSheetResponseDto } from '../../services/stock-balancesheet.service';
 import { LoadingState } from '../../models/stock-news.model';
+import { TimeAgoPipe } from '../../pipes/time-ago.pipe';
 
 @Component({
   selector: 'app-stock-asset-growth-card',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, TimeAgoPipe],
   templateUrl: './stock-asset-growth-card.component.html',
   styleUrl: './stock-asset-growth-card.component.css'
 })

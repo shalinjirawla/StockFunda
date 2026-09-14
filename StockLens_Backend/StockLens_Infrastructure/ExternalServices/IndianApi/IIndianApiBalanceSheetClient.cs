@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 
 namespace StockLens_Infrastructure.ExternalServices.IndianApi
 {
-    public interface IIndianApiFinancialsClient
+    public interface IIndianApiBalanceSheetClient
     {
         Task<Dictionary<string, Dictionary<string, decimal?>>?> GetBalanceSheetAsync(string symbol, CancellationToken cancellationToken = default);
     }
