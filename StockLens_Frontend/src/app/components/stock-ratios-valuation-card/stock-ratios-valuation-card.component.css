@@ -21,11 +21,10 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 1rem;
-  background: rgba(18, 24, 38, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  padding: 1.1rem 1.4rem;
-  backdrop-filter: blur(12px);
+  background: transparent;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0 0 1.25rem 0;
+  margin-bottom: 0.25rem;
 }
 
 .section-title-left {
@@ -155,14 +154,16 @@
 }
 
 .metric-card {
-  background: rgba(18, 24, 38, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(30, 42, 68, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 14px;
   padding: 1.25rem 1.2rem;
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
   backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
   position: relative;
   overflow: hidden;

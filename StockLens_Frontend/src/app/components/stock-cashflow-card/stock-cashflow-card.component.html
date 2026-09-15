@@ -67,9 +67,21 @@
 
   <!-- State 4: Success Content -->
   @if (loadingState === 'success' && cashflow && activePeriod; as current) {
-  <!-- Metadata & Period Header Bar -->
+  <!-- Metadata & Period Header Bar with Integrated Cash Flow Heading -->
   <div class="pattern-header-card">
     <div class="header-left">
+      <div class="header-title-box">
+        <div class="header-icon-badge">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="header-svg-icon">
+            <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+          </svg>
+        </div>
+        <div>
+          <h3 class="header-card-title">Cash Flow</h3>
+          <p class="header-card-subtitle">Annual Cash Flow Statements &amp; Capital Allocation Dynamics</p>
+        </div>
+      </div>
+
       <div class="period-badge-group">
         <span class="period-pill active">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pill-icon">
@@ -120,16 +132,6 @@
 
   <!-- SECTION 1: Cash Flow & Capital Allocation Dynamics (4 Cards) -->
   <div class="section-container">
-    <div class="section-title-row">
-      <div class="section-title-left">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="section-icon">
-          <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-        </svg>
-        <h3 class="section-heading">Cash Flow & Capital Allocation Dynamics</h3>
-      </div>
-      <span class="section-badge">XBRL Cash Flows</span>
-    </div>
-
     <div class="cards-grid">
       <!-- 1. Free Cash Flow (FCF) Card -->
       <div class="metric-card fcf-card">

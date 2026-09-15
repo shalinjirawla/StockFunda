@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, inject, signal } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, signal, HostListener, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject, Subscription, of } from 'rxjs';
@@ -6,7 +6,7 @@ import { debounceTime, distinctUntilChanged, switchMap, catchError } from 'rxjs/
 import { StockNewsService } from '../../services/stock-news.service';
 import { StockShareholdingService } from '../../services/stock-shareholding.service';
 import { StockCashflowService } from '../../services/stock-cashflow.service';
-import { StockBalanceSheetService } from '../../services/stock-balancesheet.service';
+import { StockBalanceSheetService, BalanceSheetResponseDto } from '../../services/stock-balancesheet.service';
 import { Stock, Company, StockNewsResponse, LoadingState } from '../../models/stock-news.model';
 import { StockShareholdingResponse } from '../../models/stock-shareholding.model';
 import { StockCashflowResponse } from '../../models/stock-cashflow.model';
@@ -16,10 +16,9 @@ import { StockCashflowCardComponent } from '../stock-cashflow-card/stock-cashflo
 import { StockAssetGrowthCardComponent } from '../stock-asset-growth-card/stock-asset-growth-card.component';
 import { StockPriceChartComponent } from '../stock-price-chart/stock-price-chart.component';
 import { StockRatiosValuationCardComponent } from '../stock-ratios-valuation-card/stock-ratios-valuation-card.component';
-import { BalanceSheetResponseDto } from '../../services/stock-balancesheet.service';
 import { TimeAgoPipe } from '../../pipes/time-ago.pipe';
 
-export type DashboardTab = 'prices' | 'ratios' | 'cashflow' | 'assets' | 'shareholding' | 'news';
+export type DashboardSection = 'overview' | 'ratios' | 'cashflow' | 'balancesheet' | 'shareholding' | 'chart' | 'news';
 
 @Component({
   selector: 'app-stock-dashboard',
@@ -43,29 +42,28 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
   private readonly shareholdingService = inject(StockShareholdingService);
   private readonly cashflowService = inject(StockCashflowService);
   private readonly financialsService = inject(StockBalanceSheetService);
+  private readonly cd = inject(ChangeDetectorRef);
 
   // Quick select stocks
   readonly quickStocks = [
-    { symbol: 'RELIANCE', name: 'Reliance Industries', exchange: 'NSE' },
+    { symbol: 'TATAMOTORS', name: 'Tata Motors Ltd', exchange: 'NSE' },
+    { symbol: 'RELIANCE', name: 'Reliance Industries Ltd', exchange: 'NSE' },
     { symbol: 'TCS', name: 'Tata Consultancy Services', exchange: 'NSE' },
     { symbol: 'INFY', name: 'Infosys Limited', exchange: 'NSE' },
-    { symbol: 'TATAMOTORS', name: 'Tata Motors', exchange: 'NSE' },
-    { symbol: 'HDFCBANK', name: 'HDFC Bank', exchange: 'NSE' },
-    { symbol: 'ICICIBANK', name: 'ICICI Bank', exchange: 'NSE' }
+    { symbol: 'HDFCBANK', name: 'HDFC Bank Ltd', exchange: 'NSE' },
+    { symbol: 'ICICIBANK', name: 'ICICI Bank Ltd', exchange: 'NSE' }
   ];
 
-  activeTab = signal<DashboardTab>('ratios');
+  // Active section for ScrollSpy and sticky tab highlight
+  activeSection = signal<DashboardSection>('overview');
   availableStocks = signal<Stock[]>([]);
   selectedSymbol = signal<string>('RELIANCE');
   selectedExchange = signal<string>('NSE');
   searchQuery = signal<string>('');
 
-  // Track loaded symbol per tab to enable on-demand lazy loading
-  private loadedRatiosSymbol: string = '';
-  private loadedShareholdingSymbol: string = '';
-  private loadedCashflowSymbol: string = '';
-  private loadedNewsSymbol: string = '';
-  private loadedAssetsSymbol: string = '';
+  // Flag to disable scrollspy tracking briefly during programmatic smooth scrolling
+  private isProgrammaticScrolling = false;
+  private scrollTimeout?: any;
 
   // Shareholding State
   shareholdingResponse = signal<StockShareholdingResponse | null>(null);
@@ -91,6 +89,9 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
   newsErrorMessage = signal<string>('');
   isNewsRefreshing = signal<boolean>(false);
 
+  // Sync all state
+  isSyncingAll = signal<boolean>(false);
+
   // Typeahead search
   searchResults = signal<Company[]>([]);
   isSearching = signal<boolean>(false);
@@ -99,12 +100,97 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.loadAvailableStocks();
-    this.fetchActiveTabData(false);
     this.setupSearch();
+    this.fetchAllData(false);
   }
 
   ngOnDestroy(): void {
     this.searchSubscription?.unsubscribe();
+    if (this.scrollTimeout) {
+      clearTimeout(this.scrollTimeout);
+    }
+  }
+
+  /**
+   * ScrollSpy Listener: Automatically tracks active section on window scroll
+   */
+  @HostListener('window:scroll', [])
+  onWindowScroll(): void {
+    if (this.isProgrammaticScrolling) return;
+
+    // 1. If at the absolute top of the page (within 10px), activate 'overview'
+    if (window.scrollY <= 10) {
+      if (this.activeSection() !== 'overview') {
+        this.activeSection.set('overview');
+      }
+      return;
+    }
+
+    // 2. If near the bottom of document, activate the last section ('news')
+    const scrollBottom = window.innerHeight + window.scrollY;
+    const docHeight = document.documentElement.scrollHeight;
+    if (scrollBottom >= docHeight - 60) {
+      if (this.activeSection() !== 'news') {
+        this.activeSection.set('news');
+      }
+      return;
+    }
+
+    const sections: DashboardSection[] = [
+      'overview',
+      'ratios',
+      'cashflow',
+      'balancesheet',
+      'shareholding',
+      'chart',
+      'news'
+    ];
+
+    // The reading focal line directly below the sticky header (62px) + sticky subnav (~48px)
+    const focalY = 135;
+
+    for (const sectionId of sections) {
+      const el = document.getElementById('section-' + sectionId);
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        // Check if the focal point is inside this section's visible bounds
+        if (rect.top <= focalY && rect.bottom > focalY) {
+          if (this.activeSection() !== sectionId) {
+            this.activeSection.set(sectionId);
+          }
+          return;
+        }
+      }
+    }
+  }
+
+  /**
+   * Smoothly scroll to a specific section and highlight its tab
+   */
+  scrollToSection(sectionId: DashboardSection): void {
+    this.activeSection.set(sectionId);
+    this.isProgrammaticScrolling = true;
+
+    if (this.scrollTimeout) {
+      clearTimeout(this.scrollTimeout);
+    }
+
+    const el = document.getElementById('section-' + sectionId);
+    if (el) {
+      const stickyHeaderOffset = 116; // 62px header + 48px subnav + 6px buffer
+      const elementPosition = el.getBoundingClientRect().top;
+      const targetY = elementPosition + window.scrollY - stickyHeaderOffset;
+
+      window.scrollTo({
+        top: Math.max(0, targetY),
+        behavior: 'smooth'
+      });
+    }
+
+    // Reset programmatic scrolling flag after smooth scroll completes
+    this.scrollTimeout = setTimeout(() => {
+      this.isProgrammaticScrolling = false;
+    }, 600);
   }
 
   setupSearch(): void {
@@ -141,22 +227,6 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     });
   }
 
-  setTab(tab: DashboardTab): void {
-    this.activeTab.set(tab);
-    const currentSymbol = this.selectedSymbol();
-    if (tab === 'ratios' && this.loadedRatiosSymbol !== currentSymbol) {
-      this.fetchCashflow(false);
-    } else if (tab === 'cashflow' && this.loadedCashflowSymbol !== currentSymbol) {
-      this.fetchCashflow(false);
-    } else if (tab === 'assets' && this.loadedAssetsSymbol !== currentSymbol) {
-      this.fetchBalanceSheet(false);
-    } else if (tab === 'shareholding' && this.loadedShareholdingSymbol !== currentSymbol) {
-      this.fetchShareholding(false);
-    } else if (tab === 'news' && this.loadedNewsSymbol !== currentSymbol) {
-      this.fetchNews(false);
-    }
-  }
-
   selectStock(symbol: string, exchange: string = 'NSE'): void {
     const cleanSymbol = symbol.toUpperCase();
     const cleanExchange = exchange.toUpperCase();
@@ -165,15 +235,11 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     this.searchQuery.set('');
     this.searchResults.set([]);
 
-    // Invalidate per-tab caches for the old symbol
-    this.loadedRatiosSymbol = '';
-    this.loadedShareholdingSymbol = '';
-    this.loadedCashflowSymbol = '';
-    this.loadedAssetsSymbol = '';
-    this.loadedNewsSymbol = '';
+    // Fetch all fundamental and news datasets concurrently
+    this.fetchAllData(false);
 
-    // Fetch ONLY the currently active tab's data
-    this.fetchActiveTabData(false);
+    // Scroll to overview top smoothly
+    this.scrollToSection('overview');
   }
 
   toggleExchange(exchange: string): void {
@@ -181,12 +247,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
       this.selectedExchange.set(exchange);
       this.searchQuery.set('');
       this.searchResults.set([]);
-      this.loadedRatiosSymbol = '';
-      this.loadedShareholdingSymbol = '';
-      this.loadedCashflowSymbol = '';
-      this.loadedAssetsSymbol = '';
-      this.loadedNewsSymbol = '';
-      this.fetchActiveTabData(false);
+      this.fetchAllData(false);
     }
   }
 
@@ -201,12 +262,8 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     if (query) {
       this.selectedSymbol.set(query.toUpperCase());
       this.searchResults.set([]);
-      this.loadedRatiosSymbol = '';
-      this.loadedShareholdingSymbol = '';
-      this.loadedCashflowSymbol = '';
-      this.loadedAssetsSymbol = '';
-      this.loadedNewsSymbol = '';
-      this.fetchActiveTabData(false);
+      this.fetchAllData(false);
+      this.scrollToSection('overview');
     }
   }
 
@@ -216,16 +273,19 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     this.selectStock(company.symbol, this.selectedExchange());
   }
 
-  fetchActiveTabData(isRefresh: boolean): void {
-    if (this.activeTab() === 'ratios' || this.activeTab() === 'cashflow') {
-      this.fetchCashflow(isRefresh);
-    } else if (this.activeTab() === 'assets') {
-      this.fetchBalanceSheet(isRefresh);
-    } else if (this.activeTab() === 'shareholding') {
-      this.fetchShareholding(isRefresh);
-    } else if (this.activeTab() === 'news') {
-      this.fetchNews(isRefresh);
-    }
+  fetchAllData(isRefresh: boolean = false): void {
+    this.fetchCashflow(isRefresh);
+    this.fetchBalanceSheet(isRefresh);
+    this.fetchShareholding(isRefresh);
+    this.fetchNews(isRefresh);
+  }
+
+  syncAllData(): void {
+    this.isSyncingAll.set(true);
+    this.fetchAllData(true);
+    setTimeout(() => {
+      this.isSyncingAll.set(false);
+    }, 1500);
   }
 
   fetchBalanceSheet(isRefresh: boolean): void {
@@ -238,19 +298,17 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     } else {
       this.assetsLoadingState.set('loading');
     }
-
     this.assetsErrorMessage.set('');
 
     this.financialsService.getBalanceSheet(symbol, exchange, isRefresh).subscribe({
       next: (response) => {
         this.assetsResponse.set(response);
-        this.loadedAssetsSymbol = symbol;
         this.assetsLoadingState.set('success');
         this.isAssetsRefreshing.set(false);
       },
       error: (err) => {
-        console.error('Error fetching assets:', err);
-        this.assetsErrorMessage.set(err.error?.message || 'Could not fetch asset data. Please try again.');
+        console.error('Error fetching balance sheet:', err);
+        this.assetsErrorMessage.set(err.error?.message || 'Could not fetch asset data.');
         this.assetsLoadingState.set('error');
         this.isAssetsRefreshing.set(false);
       }
@@ -272,7 +330,6 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
       next: (data) => {
         this.shareholdingResponse.set(data);
         this.isShareholdingRefreshing.set(false);
-        this.loadedShareholdingSymbol = symbol;
         if (data.currentPeriod) {
           this.shareholdingLoadingState.set('success');
         } else {
@@ -283,7 +340,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
         this.isShareholdingRefreshing.set(false);
         this.shareholdingLoadingState.set('error');
         this.shareholdingErrorMessage.set(
-          err.error?.detail || err.error?.message || 'Failed to retrieve shareholding data from BharatStock. Please try again.'
+          err.error?.detail || err.error?.message || 'Failed to retrieve shareholding data.'
         );
       }
     });
@@ -304,8 +361,6 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
       next: (data) => {
         this.cashflowResponse.set(data);
         this.isCashflowRefreshing.set(false);
-        this.loadedCashflowSymbol = symbol;
-        this.loadedRatiosSymbol = symbol;
         if (data && data.summary) {
           this.cashflowLoadingState.set('success');
         } else {
@@ -316,7 +371,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
         this.isCashflowRefreshing.set(false);
         this.cashflowLoadingState.set('error');
         this.cashflowErrorMessage.set(
-          err.error?.detail || err.error?.message || 'Failed to retrieve cash flow and financial data from BharatStock. Please try again.'
+          err.error?.detail || err.error?.message || 'Failed to retrieve cash flow and financial data.'
         );
       }
     });
@@ -337,7 +392,6 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
       next: (data) => {
         this.newsResponse.set(data);
         this.isNewsRefreshing.set(false);
-        this.loadedNewsSymbol = symbol;
         if (data.news && data.news.length > 0) {
           this.newsLoadingState.set('success');
         } else {
@@ -348,9 +402,55 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
         this.isNewsRefreshing.set(false);
         this.newsLoadingState.set('error');
         this.newsErrorMessage.set(
-          err.error?.detail || err.error?.message || 'Failed to retrieve news from backend. Please try again.'
+          err.error?.detail || err.error?.message || 'Failed to retrieve news from backend.'
         );
       }
     });
+  }
+
+  getCompanyName(): string {
+    return this.cashflowResponse()?.companyName ||
+      this.shareholdingResponse()?.companyName ||
+      this.newsResponse()?.companyName ||
+      this.selectedSymbol();
+  }
+
+  // Financial Number Formatters (Live API Data Only)
+  formatCurrency(val?: number | null): string {
+    if (val === null || val === undefined || isNaN(val)) return '—';
+    return '₹ ' + val.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 0 });
+  }
+
+  formatMarketCap(val?: number | null): string {
+    if (val === null || val === undefined || isNaN(val)) return '—';
+    if (val >= 10000000) {
+      return '₹ ' + (val / 10000000).toLocaleString('en-IN', { maximumFractionDigits: 0 }) + ' Cr.';
+    }
+    return '₹ ' + val.toLocaleString('en-IN', { maximumFractionDigits: 0 }) + ' Cr.';
+  }
+
+  formatHighLow(): string {
+    const high = this.cashflowResponse()?.ratios?.week52High;
+    const low = this.cashflowResponse()?.ratios?.week52Low;
+    if (high !== null && high !== undefined && low !== null && low !== undefined) {
+      return `₹ ${high.toLocaleString('en-IN', { maximumFractionDigits: 2 })} / ${low.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+    }
+    if (high !== null && high !== undefined) {
+      return `₹ ${high.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+    }
+    if (low !== null && low !== undefined) {
+      return `₹ ${low.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+    }
+    return '—';
+  }
+
+  formatRatio(val?: number | null): string {
+    if (val === null || val === undefined || isNaN(val)) return '—';
+    return val.toFixed(1);
+  }
+
+  formatPercent(val?: number | null): string {
+    if (val === null || val === undefined || isNaN(val)) return '—';
+    return val.toFixed(1) + ' %';
   }
 }
