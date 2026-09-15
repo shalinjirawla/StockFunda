@@ -29,17 +29,57 @@ namespace StockLens_DataLayer.Entities
         public DateTime? PeriodEndDate { get; set; }
 
         /// <summary>
-        /// Annual Revenue / Topline in ₹ Crores (or normalized unit from XBRL).
+        /// Revenue / Sales / Topline in ₹ Crores (or normalized unit from XBRL).
         /// </summary>
         public decimal? Revenue { get; set; }
 
         /// <summary>
-        /// Annual Operating Profit (EBIT / operating_profit).
+        /// Total Expenses in ₹ Crores (Material cost + employee cost + other expenses).
+        /// </summary>
+        public decimal? Expenses { get; set; }
+
+        /// <summary>
+        /// Operating Profit (EBIT / operating_profit).
         /// </summary>
         public decimal? OperatingProfit { get; set; }
 
         /// <summary>
-        /// Annual Net Profit / Bottomline after tax.
+        /// Operating Profit Margin % (Operating Profit / Revenue * 100).
+        /// </summary>
+        public decimal? OperatingProfitMargin { get; set; }
+
+        /// <summary>
+        /// Other non-operating income.
+        /// </summary>
+        public decimal? OtherIncome { get; set; }
+
+        /// <summary>
+        /// Finance / Interest expense.
+        /// </summary>
+        public decimal? Interest { get; set; }
+
+        /// <summary>
+        /// Depreciation and Amortization expense.
+        /// </summary>
+        public decimal? Depreciation { get; set; }
+
+        /// <summary>
+        /// Profit Before Tax (PBT / Net income before taxes).
+        /// </summary>
+        public decimal? ProfitBeforeTax { get; set; }
+
+        /// <summary>
+        /// Tax provision / Tax expense.
+        /// </summary>
+        public decimal? Tax { get; set; }
+
+        /// <summary>
+        /// Effective Tax rate % (Tax / ProfitBeforeTax * 100).
+        /// </summary>
+        public decimal? TaxPercentage { get; set; }
+
+        /// <summary>
+        /// Net Profit / Bottomline after tax (PAT).
         /// </summary>
         public decimal? NetProfit { get; set; }
 

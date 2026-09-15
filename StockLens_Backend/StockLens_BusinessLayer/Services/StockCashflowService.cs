@@ -108,14 +108,41 @@ namespace StockLens_BusinessLayer.Services
             if (stock != null)
             {
                 var dbFinancials = await _financialRepository.GetFinancialsByStockIdAsync(stock.Id, "annual", 1);
-                if (dbFinancials != null && dbFinancials.Count > 0 && dbFinancials[0].Roce.HasValue && dbFinancials[0].PeRatio.HasValue)
+                if (dbFinancials != null && dbFinancials.Count > 0)
                 {
                     var cur = dbFinancials[0];
                     var dbBs = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 1);
                     var latestBsDb = dbBs.FirstOrDefault();
-                    decimal? eqCapDb = latestBsDb?.EquityCapital ?? cur.EquityCapital;
 
-                    // Always fetch and apply real-time live price
+                    // If cached entity is missing ratios or 52W high/low/facevalue, sync from IndianAPI
+                    if (cur.Roe == null ||
+                        cur.PeRatio == null ||
+                        cur.FaceValue == null ||
+                        cur.MarketCap == null ||
+                        cur.BookValue == null ||
+                        cur.Week52High == null ||
+                        cur.Week52Low == null ||
+                        cur.Roce == null ||
+                        cur.SectorPe == null)
+                    {
+                        if (_indianApiClient != null)
+                        {
+                            try
+                            {
+                                var overview = await _indianApiClient.GetStockFinancialsAndOverviewAsync(cleanSymbol, stock.Exchange, cancellationToken);
+                                if (overview != null)
+                                {
+                                    ApplyIndianApiRatiosToEntity(cur, overview, latestBsDb);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning(ex, "Failed to refresh ratios from IndianAPI for {Symbol}", cleanSymbol);
+                            }
+                        }
+                    }
+
+                    // Always fetch and apply real-time live quote (Price, 52W High, 52W Low)
                     var liveQuote = await GetLiveQuoteInternalAsync(cleanSymbol, stock.Exchange, cancellationToken);
                     if (liveQuote?.Price.HasValue == true && liveQuote.Price.Value > 0)
                     {
@@ -130,23 +157,78 @@ namespace StockLens_BusinessLayer.Services
                         if (cur.BookValue.HasValue && cur.BookValue.Value > 0)
                             cur.PbRatio = Math.Round(cur.CurrentPrice.Value / cur.BookValue.Value, 2);
 
+                        decimal? eqCapDb = latestBsDb?.EquityCapital ?? cur.EquityCapital;
                         var (refreshedMc, refreshedShares, refreshedEqCap, refreshedMcSrc) = CalculateMarketCap(eqCapDb, cur.FaceValue, cur.CurrentPrice, cur.MarketCap);
                         cur.MarketCap = refreshedMc;
                         cur.MarketCapSource = refreshedMcSrc;
+                        cur.TotalShares = refreshedShares ?? cur.TotalShares;
+                    }
 
-                        try
+                    // Dynamic formula fallbacks for any still-missing metrics on cur (ZERO static hardcoding)
+                    decimal? eqCapCur = latestBsDb?.EquityCapital ?? cur.EquityCapital;
+                    if (!cur.FaceValue.HasValue && eqCapCur.HasValue && eqCapCur.Value > 0)
+                    {
+                        if (cur.TotalShares.HasValue && cur.TotalShares.Value > 0)
                         {
-                            await _financialRepository.UpdateAsync(cur);
-                            await _financialRepository.SaveChangesAsync();
+                            var sh = cur.TotalShares.Value;
+                            cur.FaceValue = sh > 10000000 ? Math.Round((eqCapCur.Value * 10000000m) / sh, 2) : Math.Round(eqCapCur.Value / sh, 2);
                         }
-                        catch (Exception ex)
+                        else if (cur.CurrentPrice.HasValue && cur.MarketCap.HasValue && cur.MarketCap.Value > 0)
                         {
-                            _logger.LogWarning(ex, "Failed to persist refreshed live price to DB for {Symbol}", cleanSymbol);
+                            cur.FaceValue = Math.Round((eqCapCur.Value * cur.CurrentPrice.Value) / cur.MarketCap.Value, 0);
                         }
                     }
 
                     var (totEq, eqSrc, eqPer) = DetermineTotalEquity(null, latestBsDb);
-                    var (mCap, tShares, eqCapOut, mSource) = CalculateMarketCap(eqCapDb, cur.FaceValue, cur.CurrentPrice, cur.MarketCap);
+                    var (mCap, tShares, eqCapOut, mSource) = CalculateMarketCap(eqCapCur, cur.FaceValue, cur.CurrentPrice, cur.MarketCap);
+
+                    if (!cur.BookValue.HasValue && (totEq ?? cur.TotalEquity).HasValue)
+                    {
+                        var te = (totEq ?? cur.TotalEquity)!.Value;
+                        if (tShares.HasValue && tShares.Value > 0)
+                        {
+                            cur.BookValue = tShares.Value > 10000000 ? Math.Round((te * 10000000m) / tShares.Value, 2) : Math.Round(te / tShares.Value, 2);
+                        }
+                        else if (eqCapOut.HasValue && cur.FaceValue.HasValue && cur.FaceValue.Value > 0)
+                        {
+                            var shCr = eqCapOut.Value / cur.FaceValue.Value;
+                            if (shCr > 0) cur.BookValue = Math.Round(te / shCr, 2);
+                        }
+                    }
+
+                    if (!cur.Roe.HasValue && cur.NetProfit.HasValue && (totEq ?? cur.TotalEquity).HasValue && (totEq ?? cur.TotalEquity)!.Value > 0)
+                    {
+                        cur.Roe = Math.Round((cur.NetProfit.Value / (totEq ?? cur.TotalEquity)!.Value) * 100m, 2);
+                    }
+
+                    if (!cur.Roce.HasValue)
+                    {
+                        decimal? ebit = cur.ProfitBeforeTax.HasValue ? (cur.ProfitBeforeTax.Value + (cur.Interest ?? 0)) : (cur.OperatingProfit.HasValue ? cur.OperatingProfit.Value + (cur.OtherIncome ?? 0) : null);
+                        decimal? capEmp = (totEq ?? cur.TotalEquity).HasValue ? ((totEq ?? cur.TotalEquity)!.Value + (latestBsDb?.Borrowings ?? 0)) : null;
+                        if (ebit.HasValue && capEmp.HasValue && capEmp.Value > 0) cur.Roce = Math.Round((ebit.Value / capEmp.Value) * 100m, 2);
+                    }
+
+                    if (!cur.PeRatio.HasValue && cur.CurrentPrice.HasValue && cur.CurrentPrice.Value > 0)
+                    {
+                        var eps = cur.TtmEps ?? cur.Eps;
+                        if (eps.HasValue && eps.Value > 0) cur.PeRatio = Math.Round(cur.CurrentPrice.Value / eps.Value, 2);
+                        else if (mCap.HasValue && cur.NetProfit.HasValue && cur.NetProfit.Value > 0) cur.PeRatio = Math.Round(mCap.Value / cur.NetProfit.Value, 2);
+                    }
+
+                    if (!cur.PbRatio.HasValue && cur.CurrentPrice.HasValue && cur.CurrentPrice.Value > 0 && cur.BookValue.HasValue && cur.BookValue.Value > 0)
+                    {
+                        cur.PbRatio = Math.Round(cur.CurrentPrice.Value / cur.BookValue.Value, 2);
+                    }
+
+                    try
+                    {
+                        await _financialRepository.UpdateAsync(cur);
+                        await _financialRepository.SaveChangesAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to persist updated ratios to DB for {Symbol}", cleanSymbol);
+                    }
 
                     return new StockRatiosDto
                     {
@@ -193,7 +275,100 @@ namespace StockLens_BusinessLayer.Services
                             latestBsDb = dbBs.FirstOrDefault();
                         }
                         decimal? eqCap = latestBsDb?.EquityCapital;
+
+                        // Check live quote for 52W high/low if missing
+                        var liveQuote = await GetLiveQuoteInternalAsync(cleanSymbol, stock?.Exchange ?? "NSE", cancellationToken);
+                        if (liveQuote != null)
+                        {
+                            if (!indianData.CurrentPrice.HasValue && liveQuote.Price.HasValue) indianData.CurrentPrice = liveQuote.Price;
+                            if (!indianData.YearHigh.HasValue && liveQuote.YearHigh.HasValue) indianData.YearHigh = liveQuote.YearHigh;
+                            if (!indianData.YearLow.HasValue && liveQuote.YearLow.HasValue) indianData.YearLow = liveQuote.YearLow;
+                        }
+
+                        // Derive Face Value if missing
+                        if (!indianData.FaceValue.HasValue && eqCap.HasValue && eqCap.Value > 0)
+                        {
+                            if (indianData.Financials.FirstOrDefault()?.TotalShares.HasValue == true && indianData.Financials.First().TotalShares!.Value > 0)
+                            {
+                                var sh = indianData.Financials.First().TotalShares!.Value;
+                                indianData.FaceValue = sh > 10000000 ? Math.Round((eqCap.Value * 10000000m) / sh, 2) : Math.Round(eqCap.Value / sh, 2);
+                            }
+                            else if (indianData.CurrentPrice.HasValue && indianData.MarketCap.HasValue && indianData.MarketCap.Value > 0)
+                            {
+                                indianData.FaceValue = Math.Round((eqCap.Value * indianData.CurrentPrice.Value) / indianData.MarketCap.Value, 0);
+                            }
+                        }
+
                         var (marketCap, totalShares, eqCapVal, mcSource) = CalculateMarketCap(eqCap, indianData.FaceValue, indianData.CurrentPrice, indianData.MarketCap);
+
+                        var latestAnnual = indianData.Financials.FirstOrDefault(f => f.PeriodType == "annual") ?? indianData.Financials.FirstOrDefault();
+
+                        // Dynamic Book Value calculation if missing
+                        if (!indianData.BookValue.HasValue && latestAnnual?.TotalEquity.HasValue == true)
+                        {
+                            var te = latestAnnual.TotalEquity.Value;
+                            if (totalShares.HasValue && totalShares.Value > 0)
+                            {
+                                indianData.BookValue = totalShares.Value > 10000000 ? Math.Round((te * 10000000m) / totalShares.Value, 2) : Math.Round(te / totalShares.Value, 2);
+                            }
+                            else if ((eqCapVal ?? eqCap).HasValue && indianData.FaceValue.HasValue && indianData.FaceValue.Value > 0)
+                            {
+                                var shCr = (eqCapVal ?? eqCap)!.Value / indianData.FaceValue.Value;
+                                if (shCr > 0) indianData.BookValue = Math.Round(te / shCr, 2);
+                            }
+                        }
+
+                        // Dynamic ROE calculation if missing
+                        if (!indianData.Roe.HasValue && latestAnnual?.NetProfit.HasValue == true && latestAnnual.TotalEquity.HasValue && latestAnnual.TotalEquity.Value > 0)
+                        {
+                            indianData.Roe = Math.Round((latestAnnual.NetProfit.Value / latestAnnual.TotalEquity.Value) * 100m, 2);
+                        }
+
+                        // Dynamic ROCE calculation if missing
+                        if (!indianData.Roce.HasValue && latestAnnual != null)
+                        {
+                            decimal? ebit = latestAnnual.ProfitBeforeTax.HasValue ? (latestAnnual.ProfitBeforeTax.Value + (latestAnnual.Interest ?? 0)) : (latestAnnual.OperatingProfit.HasValue ? latestAnnual.OperatingProfit.Value + (latestAnnual.OtherIncome ?? 0) : null);
+                            decimal? capEmp = latestAnnual.TotalEquity.HasValue ? (latestAnnual.TotalEquity.Value + (latestBsDb?.Borrowings ?? latestAnnual.TotalDebt ?? 0)) : null;
+                            if (ebit.HasValue && capEmp.HasValue && capEmp.Value > 0) indianData.Roce = Math.Round((ebit.Value / capEmp.Value) * 100m, 2);
+                        }
+
+                        // Dynamic P/E calculation if missing
+                        if (!indianData.PeRatio.HasValue && indianData.CurrentPrice.HasValue && indianData.CurrentPrice.Value > 0)
+                        {
+                            var eps = indianData.TtmEps ?? latestAnnual?.Eps;
+                            if (eps.HasValue && eps.Value > 0) indianData.PeRatio = Math.Round(indianData.CurrentPrice.Value / eps.Value, 2);
+                            else if (marketCap.HasValue && latestAnnual?.NetProfit.HasValue == true && latestAnnual.NetProfit.Value > 0) indianData.PeRatio = Math.Round(marketCap.Value / latestAnnual.NetProfit.Value, 2);
+                        }
+
+                        // Dynamic P/B calculation if missing
+                        if (!indianData.PbRatio.HasValue && indianData.CurrentPrice.HasValue && indianData.CurrentPrice.Value > 0 && indianData.BookValue.HasValue && indianData.BookValue.Value > 0)
+                        {
+                            indianData.PbRatio = Math.Round(indianData.CurrentPrice.Value / indianData.BookValue.Value, 2);
+                        }
+
+                        decimal? sectorPe = indianData.SectorPe;
+                        string? sectorName = indianData.SectorName ?? indianData.Industry ?? stock?.Company?.Industry;
+                        string? sectorAsOf = null;
+
+                        if (!sectorPe.HasValue && !string.IsNullOrWhiteSpace(sectorName))
+                        {
+                            try
+                            {
+                                var secVal = await _sectorValuationService.GetSectorValuationAsync(sectorName, "NSE", cancellationToken);
+                                if (secVal?.SectorPe.HasValue == true)
+                                {
+                                    sectorPe = secVal.SectorPe;
+                                    sectorName = secVal.Sector ?? sectorName;
+                                    sectorAsOf = secVal.AsOfDate;
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning(ex, "Failed to compute fallback sector valuation for {Sector}", sectorName);
+                            }
+                        }
+
+                        var (totEq, eqSrc, eqPer) = DetermineTotalEquity(null, latestBsDb);
 
                         return new StockRatiosDto
                         {
@@ -211,11 +386,15 @@ namespace StockLens_BusinessLayer.Services
                             FaceValue = indianData.FaceValue,
                             EquityCapital = eqCapVal ?? eqCap,
                             TotalShares = totalShares,
+                            TotalEquity = totEq ?? latestAnnual?.TotalEquity,
+                            TotalEquityPeriod = eqPer ?? latestAnnual?.FiscalYear,
+                            TotalEquitySource = eqSrc ?? "Reported",
                             BookValue = indianData.BookValue,
                             MarketCap = marketCap,
                             MarketCapSource = mcSource,
-                            SectorPe = indianData.SectorPe,
-                            SectorPeSector = indianData.SectorName
+                            SectorPe = sectorPe,
+                            SectorPeSector = sectorName,
+                            SectorPeAsOfDate = sectorAsOf
                         };
                     }
                 }
@@ -327,13 +506,16 @@ namespace StockLens_BusinessLayer.Services
                 _logger.LogInformation("Serving {Count} annual financial records from DB cache for stock {Symbol} (StockId: {StockId}, LastSynced: {LastSynced}).",
                     existingEntities.Count, stock.Symbol, stock.Id, existingEntities.Max(e => e.LastSyncedAt));
 
-                // Always check and apply real-time live price from market feed
+                var cur = existingEntities[0];
+                var dbBs = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 1);
+                var latestBsDb = dbBs.FirstOrDefault();
+
+                // 1. Always check and apply real-time live price & 52W High/Low from market feed
                 try
                 {
                     var liveQuote = await GetLiveQuoteInternalAsync(stock.Symbol, stock.Exchange, cancellationToken);
                     if (liveQuote?.Price.HasValue == true && liveQuote.Price.Value > 0)
                     {
-                        var cur = existingEntities[0];
                         cur.CurrentPrice = liveQuote.Price.Value;
                         if (liveQuote.YearHigh.HasValue) cur.Week52High = liveQuote.YearHigh;
                         if (liveQuote.YearLow.HasValue) cur.Week52Low = liveQuote.YearLow;
@@ -344,16 +526,6 @@ namespace StockLens_BusinessLayer.Services
                             cur.PeRatio = Math.Round(cur.CurrentPrice.Value / cur.TtmEps.Value, 2);
                         if (cur.BookValue.HasValue && cur.BookValue.Value > 0)
                             cur.PbRatio = Math.Round(cur.CurrentPrice.Value / cur.BookValue.Value, 2);
-
-                        var dbBs = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 1);
-                        var latestBsDb = dbBs.FirstOrDefault();
-                        decimal? eqCapDb = latestBsDb?.EquityCapital ?? cur.EquityCapital;
-                        var (mCap, tShares, eqCapOut, mSource) = CalculateMarketCap(eqCapDb, cur.FaceValue, cur.CurrentPrice, cur.MarketCap);
-                        cur.MarketCap = mCap;
-                        cur.MarketCapSource = mSource;
-
-                        await _financialRepository.UpdateAsync(cur);
-                        await _financialRepository.SaveChangesAsync();
                     }
                 }
                 catch (Exception ex)
@@ -361,56 +533,25 @@ namespace StockLens_BusinessLayer.Services
                     _logger.LogWarning(ex, "Failed to refresh real-time live price for {Symbol}", stock.Symbol);
                 }
 
-                // If cached entity doesn't have ratios or new metrics yet, lazily fetch and update
-                if ((existingEntities[0].Roe == null && existingEntities[0].PeRatio == null) ||
-                    existingEntities[0].FaceValue == null ||
-                    existingEntities[0].BookValue == null ||
-                    existingEntities[0].SectorPe == null)
+                // 2. If cached entity doesn't have complete ratios/metrics yet, sync from IndianAPI
+                if (cur.Roe == null ||
+                    cur.PeRatio == null ||
+                    cur.FaceValue == null ||
+                    cur.MarketCap == null ||
+                    cur.BookValue == null ||
+                    cur.Week52High == null ||
+                    cur.Week52Low == null ||
+                    cur.Roce == null ||
+                    cur.SectorPe == null)
                 {
                     try
                     {
-                        if (existingEntities[0].Source == "IndianAPI" && _indianApiClient != null)
+                        if (_indianApiClient != null)
                         {
                             var overview = await _indianApiClient.GetStockFinancialsAndOverviewAsync(stock.Symbol, stock.Exchange, cancellationToken);
                             if (overview != null)
                             {
-                                var dbBs = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 1);
-                                var latestBs = dbBs.FirstOrDefault();
-                                ApplyIndianApiRatiosToEntity(existingEntities[0], overview, latestBs);
-                                await _financialRepository.UpdateAsync(existingEntities[0]);
-                                await _financialRepository.SaveChangesAsync();
-                            }
-                        }
-                        else
-                        {
-                            var ratiosTask = _financialProvider.GetRatiosAsync(stock.Symbol, cancellationToken);
-                            var detailsTask = _financialProvider.GetStockDetailsAsync(stock.Symbol, stock.Exchange, cancellationToken);
-                            var screenerTask = _financialProvider.GetScreenerDataAsync(stock.Symbol, stock.Exchange, cancellationToken);
-                            var livePriceTask = _indianApiClient != null
-                                ? _indianApiClient.GetCurrentPriceAsync(stock.Symbol, stock.Exchange, cancellationToken)
-                                : Task.FromResult<decimal?>(null);
-
-                            await Task.WhenAll(ratiosTask, detailsTask, screenerTask, livePriceTask);
-                            var ratios = await ratiosTask;
-                            var details = await detailsTask;
-                            var screener = await screenerTask;
-                            var livePrice = await livePriceTask;
-
-                            SectorValuationResultDto? sectorValuation = null;
-                            var sector = details?.Sector ?? screener?.Sector;
-                            if (!string.IsNullOrWhiteSpace(sector))
-                            {
-                                sectorValuation = await _sectorValuationService.GetSectorValuationAsync(sector, stock.Exchange, cancellationToken);
-                            }
-
-                            var dbBs = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 1);
-                            var latestBs = dbBs.FirstOrDefault();
-
-                            if (ratios != null || details != null || screener != null || sectorValuation != null || livePrice != null)
-                            {
-                                ApplyRatiosToEntity(existingEntities[0], ratios, details, screener, sectorValuation, null, latestBs, livePrice);
-                                await _financialRepository.UpdateAsync(existingEntities[0]);
-                                await _financialRepository.SaveChangesAsync();
+                                ApplyIndianApiRatiosToEntity(cur, overview, latestBsDb);
                             }
                         }
                     }
@@ -418,6 +559,79 @@ namespace StockLens_BusinessLayer.Services
                     {
                         _logger.LogWarning(ex, "Could not lazily populate metrics for {Symbol}.", stock.Symbol);
                     }
+                }
+
+                // 3. Dynamic formula fallbacks for any still-missing metrics on cur (ZERO static hardcoding)
+                decimal? eqCapCur = latestBsDb?.EquityCapital ?? cur.EquityCapital;
+                if (!cur.FaceValue.HasValue && eqCapCur.HasValue && eqCapCur.Value > 0)
+                {
+                    if (cur.TotalShares.HasValue && cur.TotalShares.Value > 0)
+                    {
+                        var sh = cur.TotalShares.Value;
+                        cur.FaceValue = sh > 10000000 ? Math.Round((eqCapCur.Value * 10000000m) / sh, 2) : Math.Round(eqCapCur.Value / sh, 2);
+                    }
+                    else if (cur.CurrentPrice.HasValue && cur.MarketCap.HasValue && cur.MarketCap.Value > 0)
+                    {
+                        cur.FaceValue = Math.Round((eqCapCur.Value * cur.CurrentPrice.Value) / cur.MarketCap.Value, 0);
+                    }
+                }
+
+                var (totEq, eqSrc, eqPer) = DetermineTotalEquity(null, latestBsDb);
+                var (mCap, tShares, eqCapOut, mSource) = CalculateMarketCap(eqCapCur, cur.FaceValue, cur.CurrentPrice, cur.MarketCap);
+                if (mCap.HasValue)
+                {
+                    cur.MarketCap = mCap;
+                    cur.MarketCapSource = mSource;
+                    cur.TotalShares = tShares ?? cur.TotalShares;
+                    cur.EquityCapital = eqCapOut ?? cur.EquityCapital;
+                }
+
+                if (!cur.BookValue.HasValue && (totEq ?? cur.TotalEquity).HasValue)
+                {
+                    var te = (totEq ?? cur.TotalEquity)!.Value;
+                    if (tShares.HasValue && tShares.Value > 0)
+                    {
+                        cur.BookValue = tShares.Value > 10000000 ? Math.Round((te * 10000000m) / tShares.Value, 2) : Math.Round(te / tShares.Value, 2);
+                    }
+                    else if (eqCapOut.HasValue && cur.FaceValue.HasValue && cur.FaceValue.Value > 0)
+                    {
+                        var shCr = eqCapOut.Value / cur.FaceValue.Value;
+                        if (shCr > 0) cur.BookValue = Math.Round(te / shCr, 2);
+                    }
+                }
+
+                if (!cur.Roe.HasValue && cur.NetProfit.HasValue && (totEq ?? cur.TotalEquity).HasValue && (totEq ?? cur.TotalEquity)!.Value > 0)
+                {
+                    cur.Roe = Math.Round((cur.NetProfit.Value / (totEq ?? cur.TotalEquity)!.Value) * 100m, 2);
+                }
+
+                if (!cur.Roce.HasValue)
+                {
+                    decimal? ebit = cur.ProfitBeforeTax.HasValue ? (cur.ProfitBeforeTax.Value + (cur.Interest ?? 0)) : (cur.OperatingProfit.HasValue ? cur.OperatingProfit.Value + (cur.OtherIncome ?? 0) : null);
+                    decimal? capEmp = (totEq ?? cur.TotalEquity).HasValue ? ((totEq ?? cur.TotalEquity)!.Value + (latestBsDb?.Borrowings ?? 0)) : null;
+                    if (ebit.HasValue && capEmp.HasValue && capEmp.Value > 0) cur.Roce = Math.Round((ebit.Value / capEmp.Value) * 100m, 2);
+                }
+
+                if (!cur.PeRatio.HasValue && cur.CurrentPrice.HasValue && cur.CurrentPrice.Value > 0)
+                {
+                    var eps = cur.TtmEps ?? cur.Eps;
+                    if (eps.HasValue && eps.Value > 0) cur.PeRatio = Math.Round(cur.CurrentPrice.Value / eps.Value, 2);
+                    else if (mCap.HasValue && cur.NetProfit.HasValue && cur.NetProfit.Value > 0) cur.PeRatio = Math.Round(mCap.Value / cur.NetProfit.Value, 2);
+                }
+
+                if (!cur.PbRatio.HasValue && cur.CurrentPrice.HasValue && cur.CurrentPrice.Value > 0 && cur.BookValue.HasValue && cur.BookValue.Value > 0)
+                {
+                    cur.PbRatio = Math.Round(cur.CurrentPrice.Value / cur.BookValue.Value, 2);
+                }
+
+                try
+                {
+                    await _financialRepository.UpdateAsync(cur);
+                    await _financialRepository.SaveChangesAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to persist updated ratios to DB for {Symbol}", stock.Symbol);
                 }
 
                 return await BuildResponseDtoAsync(stock, existingEntities, cancellationToken);
@@ -505,6 +719,27 @@ namespace StockLens_BusinessLayer.Services
             var now = DateTime.UtcNow;
             var balanceSheets = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 5);
 
+            if (!data.SectorPe.HasValue)
+            {
+                var sectorName = data.SectorName ?? data.Industry ?? stock.Company?.Industry;
+                if (!string.IsNullOrWhiteSpace(sectorName))
+                {
+                    try
+                    {
+                        var secVal = await _sectorValuationService.GetSectorValuationAsync(sectorName, stock.Exchange, cancellationToken);
+                        if (secVal?.SectorPe.HasValue == true)
+                        {
+                            data.SectorPe = secVal.SectorPe;
+                            data.SectorName = secVal.Sector ?? sectorName;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to compute fallback sector valuation for {Sector}", sectorName);
+                    }
+                }
+            }
+
             var periodsToSave = data.Financials.Take(5).ToList();
 
             for (int i = 0; i < periodsToSave.Count; i++)
@@ -539,6 +774,8 @@ namespace StockLens_BusinessLayer.Services
                     if (period.NetProfitAttributableToMinorityInterest.HasValue)
                         existing.NetProfitAttributableToMinorityInterest = period.NetProfitAttributableToMinorityInterest;
                     if (period.OtherEquity.HasValue) existing.OtherEquity = period.OtherEquity;
+                    if (period.EquityCapital.HasValue) existing.EquityCapital = period.EquityCapital;
+                    if (period.TotalShares.HasValue) existing.TotalShares = period.TotalShares;
                     if (cfo.HasValue) existing.OperatingCashFlow = cfo;
                     if (capex.HasValue) existing.Capex = capex;
                     if (fcf.HasValue) existing.FreeCashFlow = fcf;
@@ -573,6 +810,8 @@ namespace StockLens_BusinessLayer.Services
                         Eps = period.Eps,
                         NetProfitAttributableToMinorityInterest = period.NetProfitAttributableToMinorityInterest,
                         OtherEquity = period.OtherEquity,
+                        EquityCapital = period.EquityCapital,
+                        TotalShares = period.TotalShares,
                         TotalEquity = period.TotalEquity,
                         OperatingCashFlow = cfo,
                         Capex = capex,
@@ -615,23 +854,109 @@ namespace StockLens_BusinessLayer.Services
             if (data.YearLow.HasValue) entity.Week52Low = data.YearLow;
             if (data.FaceValue.HasValue) entity.FaceValue = data.FaceValue;
             if (data.BookValue.HasValue) entity.BookValue = data.BookValue;
+            if (data.MarketCap.HasValue) entity.MarketCap = data.MarketCap;
             if (data.SectorPe.HasValue)
             {
                 entity.SectorPe = data.SectorPe;
                 entity.SectorPeSector = data.SectorName;
             }
 
-            decimal? equityCapital = matchingBalanceSheet?.EquityCapital ?? entity.EquityCapital;
-            decimal? faceValue = entity.FaceValue;
-            decimal? currentPrice = entity.CurrentPrice;
+            var latestFin = data.Financials.FirstOrDefault(f => f.PeriodType == "annual") ?? data.Financials.FirstOrDefault();
 
-            var (marketCap, totalShares, eqCap, mcSource) = CalculateMarketCap(equityCapital, faceValue, currentPrice, data.MarketCap);
+            decimal? equityCapital = matchingBalanceSheet?.EquityCapital ?? entity.EquityCapital ?? latestFin?.EquityCapital;
+            if (equityCapital.HasValue) entity.EquityCapital = equityCapital;
+
+            if (latestFin?.TotalShares.HasValue == true && !entity.TotalShares.HasValue)
+            {
+                entity.TotalShares = latestFin.TotalShares;
+            }
+
+            decimal? faceValue = entity.FaceValue ?? data.FaceValue;
+            decimal? currentPrice = entity.CurrentPrice ?? data.CurrentPrice;
+            decimal? marketCapRaw = entity.MarketCap ?? data.MarketCap;
+
+            // Fallback dynamic FaceValue calculation
+            if (!faceValue.HasValue && equityCapital.HasValue && equityCapital.Value > 0)
+            {
+                if (entity.TotalShares.HasValue && entity.TotalShares.Value > 0)
+                {
+                    var sh = entity.TotalShares.Value;
+                    faceValue = sh > 10000000 ? Math.Round((equityCapital.Value * 10000000m) / sh, 2) : Math.Round(equityCapital.Value / sh, 2);
+                    entity.FaceValue = faceValue;
+                }
+                else if (currentPrice.HasValue && marketCapRaw.HasValue && marketCapRaw.Value > 0)
+                {
+                    faceValue = Math.Round((equityCapital.Value * currentPrice.Value) / marketCapRaw.Value, 0);
+                    entity.FaceValue = faceValue;
+                }
+            }
+
+            var (marketCap, totalShares, eqCap, mcSource) = CalculateMarketCap(equityCapital, faceValue, currentPrice, marketCapRaw);
             if (marketCap.HasValue)
             {
                 entity.MarketCap = marketCap;
                 entity.MarketCapSource = mcSource;
-                entity.TotalShares = totalShares;
-                entity.EquityCapital = eqCap;
+                entity.TotalShares = totalShares ?? entity.TotalShares;
+                entity.EquityCapital = eqCap ?? entity.EquityCapital;
+            }
+
+            if (!entity.FaceValue.HasValue && entity.EquityCapital.HasValue && entity.EquityCapital.Value > 0 && currentPrice.HasValue && entity.MarketCap.HasValue && entity.MarketCap.Value > 0)
+            {
+                entity.FaceValue = Math.Round((entity.EquityCapital.Value * currentPrice.Value) / entity.MarketCap.Value, 0);
+            }
+
+            // Dynamic calculations for entity metrics if missing (ZERO static hardcoding)
+            if (!entity.BookValue.HasValue && entity.TotalEquity.HasValue)
+            {
+                if (entity.TotalShares.HasValue && entity.TotalShares.Value > 0)
+                {
+                    var sh = entity.TotalShares.Value;
+                    entity.BookValue = sh > 10000000 ? Math.Round((entity.TotalEquity.Value * 10000000m) / sh, 2) : Math.Round(entity.TotalEquity.Value / sh, 2);
+                }
+                else if (equityCapital.HasValue && entity.FaceValue.HasValue && entity.FaceValue.Value > 0)
+                {
+                    var shCr = equityCapital.Value / entity.FaceValue.Value;
+                    if (shCr > 0) entity.BookValue = Math.Round(entity.TotalEquity.Value / shCr, 2);
+                }
+            }
+
+            if (!entity.Roe.HasValue && entity.NetProfit.HasValue && entity.TotalEquity.HasValue && entity.TotalEquity.Value > 0)
+            {
+                entity.Roe = Math.Round((entity.NetProfit.Value / entity.TotalEquity.Value) * 100m, 2);
+            }
+
+            if (!entity.Roce.HasValue)
+            {
+                decimal? ebit = entity.ProfitBeforeTax.HasValue
+                    ? (entity.ProfitBeforeTax.Value + (entity.Interest ?? 0))
+                    : (entity.OperatingProfit.HasValue ? entity.OperatingProfit.Value + (entity.OtherIncome ?? 0) : null);
+
+                decimal? capEmp = entity.TotalEquity.HasValue
+                    ? (entity.TotalEquity.Value + (matchingBalanceSheet?.Borrowings ?? 0))
+                    : null;
+
+                if (ebit.HasValue && capEmp.HasValue && capEmp.Value > 0)
+                {
+                    entity.Roce = Math.Round((ebit.Value / capEmp.Value) * 100m, 2);
+                }
+            }
+
+            if (!entity.PeRatio.HasValue && currentPrice.HasValue && currentPrice.Value > 0)
+            {
+                var eps = entity.TtmEps ?? entity.Eps;
+                if (eps.HasValue && eps.Value > 0)
+                {
+                    entity.PeRatio = Math.Round(currentPrice.Value / eps.Value, 2);
+                }
+                else if (entity.MarketCap.HasValue && entity.NetProfit.HasValue && entity.NetProfit.Value > 0)
+                {
+                    entity.PeRatio = Math.Round(entity.MarketCap.Value / entity.NetProfit.Value, 2);
+                }
+            }
+
+            if (!entity.PbRatio.HasValue && currentPrice.HasValue && currentPrice.Value > 0 && entity.BookValue.HasValue && entity.BookValue.Value > 0)
+            {
+                entity.PbRatio = Math.Round(currentPrice.Value / entity.BookValue.Value, 2);
             }
         }
 
@@ -883,7 +1208,37 @@ namespace StockLens_BusinessLayer.Services
                 return cached.Quote;
             }
 
-            // 1. Real-time Live Quote from Yahoo Finance (Direct exchange feed NSE/BSE)
+            // 1. Primary: Real-time Live Quote from IndianAPI (Direct feed with Price, 52W High, 52W Low)
+            if (_indianApiClient != null)
+            {
+                try
+                {
+                    var quote = await _indianApiClient.GetLiveQuoteAsync(cleanSymbol, cleanExchange, cancellationToken);
+                    if (quote?.Price.HasValue == true && quote.Price.Value > 0)
+                    {
+                        LiveQuoteMemoryCache[cacheKey] = (quote, DateTime.UtcNow);
+                        return quote;
+                    }
+
+                    var directP = await _indianApiClient.GetCurrentPriceAsync(cleanSymbol, cleanExchange, cancellationToken);
+                    if (directP.HasValue && directP.Value > 0)
+                    {
+                        var q = new YahooLiveQuoteDto
+                        {
+                            Symbol = cleanSymbol,
+                            Price = directP.Value
+                        };
+                        LiveQuoteMemoryCache[cacheKey] = (q, DateTime.UtcNow);
+                        return q;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to get live quote from IndianAPI for {Symbol}", cleanSymbol);
+                }
+            }
+
+            // 2. Fallback: Yahoo Finance
             if (_yahooFinanceClient != null)
             {
                 try
@@ -898,29 +1253,6 @@ namespace StockLens_BusinessLayer.Services
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Failed to get live quote from Yahoo Finance for {Symbol}", cleanSymbol);
-                }
-            }
-
-            // 2. Primary: Try IndianAPI GetCurrentPriceAsync
-            if (_indianApiClient != null)
-            {
-                try
-                {
-                    var p = await _indianApiClient.GetCurrentPriceAsync(cleanSymbol, cleanExchange, cancellationToken);
-                    if (p.HasValue && p.Value > 0)
-                    {
-                        var q = new YahooLiveQuoteDto
-                        {
-                            Symbol = cleanSymbol,
-                            Price = p.Value
-                        };
-                        LiveQuoteMemoryCache[cacheKey] = (q, DateTime.UtcNow);
-                        return q;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to get current price from IndianAPI for {Symbol}", cleanSymbol);
                 }
             }
 
@@ -946,6 +1278,12 @@ namespace StockLens_BusinessLayer.Services
                 }
 
                 return (fallbackMarketCap, totalShares, equityCapital, fallbackMarketCap.HasValue ? "Reported" : null);
+            }
+
+            if (fallbackMarketCap.HasValue && fallbackMarketCap.Value > 0 && currentPrice.HasValue && currentPrice.Value > 0)
+            {
+                var totalShares = Math.Round(fallbackMarketCap.Value / currentPrice.Value, 4);
+                return (fallbackMarketCap, totalShares, equityCapital, "Reported");
             }
 
             return (fallbackMarketCap, null, equityCapital, fallbackMarketCap.HasValue ? "Reported" : null);
@@ -1081,22 +1419,126 @@ namespace StockLens_BusinessLayer.Services
             string? sectorAsOfDate = current.RatiosAsOfDate;
             decimal? sectorPe = current.SectorPe;
 
-            // Market Cap Calculation
+            // Market Cap & Face Value Calculation
             decimal? currentPrice = current.CurrentPrice;
-            decimal? faceValue = current.FaceValue;
+            decimal? week52High = current.Week52High;
+            decimal? week52Low = current.Week52Low;
             decimal? equityCapital = latestBs?.EquityCapital ?? current.EquityCapital;
-            var (marketCap, totalShares, eqCap, mcSource) = CalculateMarketCap(equityCapital, faceValue, currentPrice, current.MarketCap);
+            decimal? faceValue = current.FaceValue;
+            decimal? marketCap = current.MarketCap;
+            decimal? roe = current.Roe;
+            decimal? roce = current.Roce;
+            decimal? peRatio = current.PeRatio;
+            decimal? bookValue = current.BookValue;
+
+            if (!currentPrice.HasValue || !week52High.HasValue || !week52Low.HasValue || !faceValue.HasValue || !marketCap.HasValue || !equityCapital.HasValue)
+            {
+                try
+                {
+                    if (_indianApiClient != null)
+                    {
+                        var overview = await _indianApiClient.GetStockFinancialsAndOverviewAsync(stock.Symbol, stock.Exchange, cancellationToken);
+                        if (overview != null)
+                        {
+                            if (!currentPrice.HasValue && overview.CurrentPrice.HasValue) currentPrice = overview.CurrentPrice;
+                            if (!week52High.HasValue && overview.YearHigh.HasValue) week52High = overview.YearHigh;
+                            if (!week52Low.HasValue && overview.YearLow.HasValue) week52Low = overview.YearLow;
+                            if (!faceValue.HasValue && overview.FaceValue.HasValue) faceValue = overview.FaceValue;
+                            if (!marketCap.HasValue && overview.MarketCap.HasValue) marketCap = overview.MarketCap;
+                            if (!equityCapital.HasValue) equityCapital = overview.Financials?.FirstOrDefault()?.EquityCapital;
+                            if (!roe.HasValue && overview.Roe.HasValue) roe = overview.Roe;
+                            if (!roce.HasValue && overview.Roce.HasValue) roce = overview.Roce;
+                            if (!peRatio.HasValue && overview.PeRatio.HasValue) peRatio = overview.PeRatio;
+                            if (!bookValue.HasValue && overview.BookValue.HasValue) bookValue = overview.BookValue;
+                        }
+                    }
+
+                    if (!currentPrice.HasValue || !week52High.HasValue || !week52Low.HasValue)
+                    {
+                        var liveQuote = await GetLiveQuoteInternalAsync(stock.Symbol, stock.Exchange, cancellationToken);
+                        if (liveQuote != null)
+                        {
+                            if (!currentPrice.HasValue && liveQuote.Price.HasValue) currentPrice = liveQuote.Price;
+                            if (!week52High.HasValue && liveQuote.YearHigh.HasValue) week52High = liveQuote.YearHigh;
+                            if (!week52Low.HasValue && liveQuote.YearLow.HasValue) week52Low = liveQuote.YearLow;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to fetch supplemental overview metrics for {Symbol}", stock.Symbol);
+                }
+            }
+
+            if (!faceValue.HasValue && equityCapital.HasValue && equityCapital.Value > 0)
+            {
+                if (current.TotalShares.HasValue && current.TotalShares.Value > 0)
+                {
+                    var sh = current.TotalShares.Value;
+                    faceValue = sh > 10000000 ? Math.Round((equityCapital.Value * 10000000m) / sh, 2) : Math.Round(equityCapital.Value / sh, 2);
+                }
+                else if (currentPrice.HasValue && (marketCap ?? current.MarketCap).HasValue && (marketCap ?? current.MarketCap)!.Value > 0)
+                {
+                    faceValue = Math.Round((equityCapital.Value * currentPrice.Value) / (marketCap ?? current.MarketCap)!.Value, 0);
+                }
+            }
+
+            var (calculatedMc, totalShares, eqCap, mcSource) = CalculateMarketCap(equityCapital, faceValue, currentPrice, marketCap ?? current.MarketCap);
+            marketCap = calculatedMc ?? marketCap;
+
+            if (!faceValue.HasValue && equityCapital.HasValue && equityCapital.Value > 0 && currentPrice.HasValue && currentPrice.Value > 0 && marketCap.HasValue && marketCap.Value > 0)
+            {
+                faceValue = Math.Round((equityCapital.Value * currentPrice.Value) / marketCap.Value, 0);
+            }
+
+            if (!bookValue.HasValue && totalEquity.HasValue)
+            {
+                if (totalShares.HasValue && totalShares.Value > 0)
+                {
+                    bookValue = totalShares.Value > 10000000 ? Math.Round((totalEquity.Value * 10000000m) / totalShares.Value, 2) : Math.Round(totalEquity.Value / totalShares.Value, 2);
+                }
+                else if (eqCap.HasValue && faceValue.HasValue && faceValue.Value > 0)
+                {
+                    var shCr = eqCap.Value / faceValue.Value;
+                    if (shCr > 0) bookValue = Math.Round(totalEquity.Value / shCr, 2);
+                }
+            }
+
+            if (!roe.HasValue && current.NetProfit.HasValue && totalEquity.HasValue && totalEquity.Value > 0)
+            {
+                roe = Math.Round((current.NetProfit.Value / totalEquity.Value) * 100m, 2);
+            }
+
+            if (!roce.HasValue)
+            {
+                decimal? ebit = current.ProfitBeforeTax.HasValue ? (current.ProfitBeforeTax.Value + (current.Interest ?? 0)) : (current.OperatingProfit.HasValue ? current.OperatingProfit.Value + (current.OtherIncome ?? 0) : null);
+                decimal? capEmp = totalEquity.HasValue ? (totalEquity.Value + (latestBs?.Borrowings ?? 0)) : null;
+                if (ebit.HasValue && capEmp.HasValue && capEmp.Value > 0) roce = Math.Round((ebit.Value / capEmp.Value) * 100m, 2);
+            }
+
+            if (!peRatio.HasValue && currentPrice.HasValue && currentPrice.Value > 0)
+            {
+                var eps = current.TtmEps ?? current.Eps;
+                if (eps.HasValue && eps.Value > 0) peRatio = Math.Round(currentPrice.Value / eps.Value, 2);
+                else if (marketCap.HasValue && current.NetProfit.HasValue && current.NetProfit.Value > 0) peRatio = Math.Round(marketCap.Value / current.NetProfit.Value, 2);
+            }
+
+            decimal? pbRatio = current.PbRatio;
+            if (!pbRatio.HasValue && currentPrice.HasValue && currentPrice.Value > 0 && bookValue.HasValue && bookValue.Value > 0)
+            {
+                pbRatio = Math.Round(currentPrice.Value / bookValue.Value, 2);
+            }
 
             var ratiosDto = new StockRatiosDto
             {
-                Roe = current.Roe,
-                Roce = current.Roce,
-                PeRatio = current.PeRatio,
+                Roe = roe,
+                Roce = roce,
+                PeRatio = peRatio,
                 TtmEps = current.TtmEps,
-                PbRatio = current.PbRatio,
+                PbRatio = pbRatio,
                 DividendYield = current.DividendYield,
-                Week52High = current.Week52High,
-                Week52Low = current.Week52Low,
+                Week52High = week52High,
+                Week52Low = week52Low,
                 CurrentPrice = currentPrice,
                 AsOfDate = current.RatiosAsOfDate,
                 FinancialsFiscalYear = current.FiscalYear,
@@ -1107,7 +1549,7 @@ namespace StockLens_BusinessLayer.Services
                 TotalEquity = totalEquity,
                 TotalEquityPeriod = equityPeriod,
                 TotalEquitySource = equitySource,
-                BookValue = current.BookValue,
+                BookValue = bookValue,
                 MarketCap = marketCap,
                 MarketCapSource = mcSource,
                 SectorPe = sectorPe,

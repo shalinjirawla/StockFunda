@@ -31,12 +31,19 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
         public string FiscalYear { get; set; } = string.Empty;
         public DateTime? PeriodEndDate { get; set; }
         public string PeriodType { get; set; } = "annual";
-        public string PeriodKey => $"annual-{FiscalYear}";
+        public string PeriodKey => $"{PeriodType?.ToLowerInvariant() ?? "annual"}-{FiscalYear}";
 
         // Income Statement
         public decimal? Revenue { get; set; }
+        public decimal? Expenses { get; set; }
         public decimal? OperatingProfit { get; set; }
+        public decimal? OperatingProfitMargin { get; set; }
+        public decimal? OtherIncome { get; set; }
+        public decimal? Interest { get; set; }
+        public decimal? Depreciation { get; set; }
         public decimal? ProfitBeforeTax { get; set; }
+        public decimal? Tax { get; set; }
+        public decimal? TaxPercentage { get; set; }
         public decimal? NetProfit { get; set; }
         public decimal? Eps { get; set; }
         public decimal? NetProfitAttributableToMinorityInterest { get; set; }

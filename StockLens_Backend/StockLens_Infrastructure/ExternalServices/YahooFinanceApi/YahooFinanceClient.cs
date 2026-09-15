@@ -214,6 +214,224 @@ namespace StockLens_Infrastructure.ExternalServices.YahooFinanceApi
             return null;
         }
 
+        private static string? _cachedCookie;
+        private static string? _cachedCrumb;
+        private static readonly SemaphoreSlim _crumbLock = new(1, 1);
+
+        private async Task EnsureCrumbAsync(CancellationToken cancellationToken)
+        {
+            if (!string.IsNullOrWhiteSpace(_cachedCrumb) && !string.IsNullOrWhiteSpace(_cachedCookie)) return;
+
+            await _crumbLock.WaitAsync(cancellationToken);
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(_cachedCrumb) && !string.IsNullOrWhiteSpace(_cachedCookie)) return;
+
+                using var handler = new HttpClientHandler { UseCookies = true, AllowAutoRedirect = true };
+                using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(5) };
+                client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+
+                try
+                {
+                    var initRes = await client.GetAsync("https://fc.yahoo.com", cancellationToken);
+                    var cookies = handler.CookieContainer.GetCookies(new Uri("https://fc.yahoo.com"));
+                    if (cookies.Count > 0)
+                    {
+                        _cachedCookie = string.Join("; ", cookies.Cast<System.Net.Cookie>().Select(c => $"{c.Name}={c.Value}"));
+                    }
+                }
+                catch { }
+
+                using var crumbReq = new HttpRequestMessage(HttpMethod.Get, "https://query2.finance.yahoo.com/v1/test/getcrumb");
+                if (!string.IsNullOrWhiteSpace(_cachedCookie))
+                {
+                    crumbReq.Headers.Add("Cookie", _cachedCookie);
+                }
+                crumbReq.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+
+                var crumbRes = await client.SendAsync(crumbReq, cancellationToken);
+                if (crumbRes.IsSuccessStatusCode)
+                {
+                    _cachedCrumb = (await crumbRes.Content.ReadAsStringAsync(cancellationToken)).Trim();
+                    Console.WriteLine($"[YahooFinance] Successfully acquired session crumb: {_cachedCrumb}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not acquire Yahoo crumb, trying direct request.");
+            }
+            finally
+            {
+                _crumbLock.Release();
+            }
+        }
+
+        public async Task<System.Collections.Generic.List<StockLens_Infrastructure.ExternalServices.IndianApi.IndianApiFinancialPeriodDto>> GetQuarterlyIncomeStatementsAsync(
+            string symbol,
+            string? exchange = "NSE",
+            CancellationToken cancellationToken = default)
+        {
+            var results = new System.Collections.Generic.List<StockLens_Infrastructure.ExternalServices.IndianApi.IndianApiFinancialPeriodDto>();
+            if (string.IsNullOrWhiteSpace(symbol)) return results;
+
+            try
+            {
+                var suffix = (exchange != null && exchange.Equals("BSE", StringComparison.OrdinalIgnoreCase)) ? ".BO" : ".NS";
+                var cleanSymbol = symbol.Trim().ToUpperInvariant();
+                var searchSymbol = cleanSymbol.EndsWith(".NS") || cleanSymbol.EndsWith(".BO") ? cleanSymbol : $"{cleanSymbol}{suffix}";
+
+                await EnsureCrumbAsync(cancellationToken);
+
+                var endpoint = !string.IsNullOrWhiteSpace(_cachedCrumb)
+                    ? $"/v10/finance/quoteSummary/{Uri.EscapeDataString(searchSymbol)}?modules=incomeStatementHistoryQuarterly&crumb={Uri.EscapeDataString(_cachedCrumb)}"
+                    : $"/v10/finance/quoteSummary/{Uri.EscapeDataString(searchSymbol)}?modules=incomeStatementHistoryQuarterly";
+
+                _logger.LogInformation("Fetching quarterly income statements from Yahoo Finance API for {Symbol}", searchSymbol);
+                Console.WriteLine($"[YahooFinance] Fetching quarterly income statements for {searchSymbol} via {endpoint}");
+
+                using var req = new HttpRequestMessage(HttpMethod.Get, endpoint);
+                if (!string.IsNullOrWhiteSpace(_cachedCookie))
+                {
+                    req.Headers.Add("Cookie", _cachedCookie);
+                }
+
+                var response = await _httpClient.SendAsync(req, cancellationToken);
+                Console.WriteLine($"[YahooFinance] Response status: {response.StatusCode} for {searchSymbol}");
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errStr = await response.Content.ReadAsStringAsync(cancellationToken);
+                    Console.WriteLine($"[YahooFinance ERROR]: {errStr}");
+                    _logger.LogWarning("Yahoo Finance quoteSummary API returned status {StatusCode} for {Symbol}", response.StatusCode, searchSymbol);
+                    return results;
+                }
+
+                var json = await response.Content.ReadAsStringAsync(cancellationToken);
+                Console.WriteLine($"[YahooFinance] Received {json.Length} chars payload for {searchSymbol}");
+                using var doc = JsonDocument.Parse(json);
+
+                if (doc.RootElement.TryGetProperty("quoteSummary", out var qs) &&
+                    qs.TryGetProperty("result", out var resArray) &&
+                    resArray.ValueKind == JsonValueKind.Array &&
+                    resArray.GetArrayLength() > 0)
+                {
+                    var firstRes = resArray[0];
+                    if (firstRes.TryGetProperty("incomeStatementHistoryQuarterly", out var ishq) &&
+                        ishq.TryGetProperty("incomeStatementHistory", out var histArr) &&
+                        histArr.ValueKind == JsonValueKind.Array)
+                    {
+                        const decimal croreDivisor = 10000000m; // Convert INR rupees to INR Crores
+
+                        foreach (var stmt in histArr.EnumerateArray())
+                        {
+                            var period = new StockLens_Infrastructure.ExternalServices.IndianApi.IndianApiFinancialPeriodDto
+                            {
+                                PeriodType = "quarterly"
+                            };
+
+                            if (stmt.TryGetProperty("endDate", out var edObj))
+                            {
+                                if (edObj.TryGetProperty("fmt", out var edFmt) && edFmt.ValueKind == JsonValueKind.String &&
+                                    DateTime.TryParse(edFmt.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var ed))
+                                {
+                                    period.PeriodEndDate = ed;
+                                    period.FiscalYear = ed.ToString("MMM yyyy");
+                                }
+                                else if (edObj.TryGetProperty("raw", out var edRaw) && edRaw.TryGetInt64(out var ts))
+                                {
+                                    var edDate = DateTimeOffset.FromUnixTimeSeconds(ts).UtcDateTime;
+                                    period.PeriodEndDate = edDate;
+                                    period.FiscalYear = edDate.ToString("MMM yyyy");
+                                }
+                            }
+
+                            // Revenue
+                            if (ExtractRawDecimal(stmt, "totalRevenue", out var rev))
+                                period.Revenue = Math.Round(rev / croreDivisor, 2);
+
+                            // Operating Profit / Operating Income
+                            if (ExtractRawDecimal(stmt, "operatingIncome", out var op))
+                                period.OperatingProfit = Math.Round(op / croreDivisor, 2);
+
+                            // Depreciation & Amortization
+                            if (ExtractRawDecimal(stmt, "depreciationAndAmortization", out var dep) ||
+                                ExtractRawDecimal(stmt, "depreciation", out dep))
+                                period.Depreciation = Math.Round(Math.Abs(dep) / croreDivisor, 2);
+
+                            // Profit Before Tax
+                            if (ExtractRawDecimal(stmt, "incomeBeforeTax", out var pbt))
+                                period.ProfitBeforeTax = Math.Round(pbt / croreDivisor, 2);
+
+                            // Tax Expense
+                            if (ExtractRawDecimal(stmt, "incomeTaxExpense", out var tax))
+                                period.Tax = Math.Round(Math.Abs(tax) / croreDivisor, 2);
+
+                            // Net Profit / Net Income
+                            if (ExtractRawDecimal(stmt, "netIncome", out var np))
+                                period.NetProfit = Math.Round(np / croreDivisor, 2);
+                            else if (ExtractRawDecimal(stmt, "netIncomeFromContinuingOperations", out var npCont))
+                                period.NetProfit = Math.Round(npCont / croreDivisor, 2);
+
+                            // EPS
+                            if (ExtractRawDecimal(stmt, "dilutedEPS", out var eps) ||
+                                ExtractRawDecimal(stmt, "basicEPS", out eps))
+                                period.Eps = Math.Round(eps, 2);
+
+                            // Interest Expense
+                            if (ExtractRawDecimal(stmt, "interestExpense", out var interest))
+                                period.Interest = Math.Round(Math.Abs(interest) / croreDivisor, 2);
+
+                            // Other Income
+                            if (ExtractRawDecimal(stmt, "totalOtherIncomeExpenseNet", out var oi))
+                                period.OtherIncome = Math.Round(oi / croreDivisor, 2);
+
+                            // Derived fields
+                            if (period.Revenue.HasValue && period.OperatingProfit.HasValue)
+                            {
+                                period.Expenses = period.Revenue.Value - period.OperatingProfit.Value;
+                                if (period.Revenue.Value > 0)
+                                {
+                                    period.OperatingProfitMargin = Math.Round((period.OperatingProfit.Value / period.Revenue.Value) * 100m, 2);
+                                }
+                            }
+
+                            if (period.Tax.HasValue && period.ProfitBeforeTax.HasValue && period.ProfitBeforeTax.Value > 0)
+                            {
+                                period.TaxPercentage = Math.Round((period.Tax.Value / period.ProfitBeforeTax.Value) * 100m, 2);
+                            }
+
+                            if (period.PeriodEndDate.HasValue)
+                            {
+                                results.Add(period);
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching quarterly income statements from Yahoo Finance API for {Symbol}", symbol);
+            }
+
+            return results;
+        }
+
+        private static bool ExtractRawDecimal(JsonElement parent, string propName, out decimal value)
+        {
+            value = 0;
+            if (parent.TryGetProperty(propName, out var prop))
+            {
+                if (prop.ValueKind == JsonValueKind.Object && prop.TryGetProperty("raw", out var rawProp) && rawProp.TryGetDecimal(out value))
+                {
+                    return true;
+                }
+                if (prop.ValueKind == JsonValueKind.Number && prop.TryGetDecimal(out value))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         private static decimal? GetDecimalAt(JsonElement array, int index)
         {
             if (array.ValueKind == JsonValueKind.Array && index < array.GetArrayLength())

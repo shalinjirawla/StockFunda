@@ -94,17 +94,8 @@ namespace StockLens_Infrastructure.ExternalServices.BharatStock
             int pageSize = 200,
             CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(sector))
-            {
-                return Task.FromResult<IReadOnlyList<BharatStockScreenerRecord>>(Array.Empty<BharatStockScreenerRecord>());
-            }
-
-            var cleanSector = sector.Trim();
-            var cleanExchange = string.IsNullOrWhiteSpace(exchange) ? "NSE" : exchange.Trim().ToUpperInvariant();
-            _logger.LogInformation("[DEV MOCK] Generating realistic sector screener stocks for sector '{Sector}' ({Exchange}).", cleanSector, cleanExchange);
-
-            var list = GenerateMockSectorScreener(cleanSector, cleanExchange);
-            return Task.FromResult<IReadOnlyList<BharatStockScreenerRecord>>(list);
+            // Zero mock data: Return empty list so Sector P/E only uses genuine real API data or stays null
+            return Task.FromResult<IReadOnlyList<BharatStockScreenerRecord>>(Array.Empty<BharatStockScreenerRecord>());
         }
 
         public static BharatStockCompanyDetailsRecord GenerateMockStockDetails(string ticker, string exchange = "NSE")
@@ -377,77 +368,6 @@ namespace StockLens_Infrastructure.ExternalServices.BharatStock
                     FreeCashFlow = 5000000000.0m,
                     ComputedAt = "2026-08-15"
                 }
-            };
-        }
-
-        public static List<BharatStockScreenerRecord> GenerateMockSectorScreener(string sector, string exchange = "NSE")
-        {
-            var cleanSector = sector.Trim();
-
-            if (cleanSector.Equals("Oil Gas & Consumable Fuels", StringComparison.OrdinalIgnoreCase) ||
-                cleanSector.Contains("Oil", StringComparison.OrdinalIgnoreCase) ||
-                cleanSector.Contains("Gas", StringComparison.OrdinalIgnoreCase) ||
-                cleanSector.Contains("Petroleum", StringComparison.OrdinalIgnoreCase))
-            {
-                return new List<BharatStockScreenerRecord>
-                {
-                    new() { Symbol = "RELIANCE", CompanyName = "Reliance Industries Limited", Sector = "Oil Gas & Consumable Fuels", Exchange = exchange, MarketCap = 1701107.00m, NetProfitTtm = 79020.0m, PeRatio = 21.5m, Roe = 8.9m, ComputedAt = "2026-08-15" },
-                    new() { Symbol = "ONGC", CompanyName = "Oil and Natural Gas Corporation Limited", Sector = "Oil Gas & Consumable Fuels", Exchange = exchange, MarketCap = 330120.00m, NetProfitTtm = 40500.0m, PeRatio = 8.1m, Roe = 18.5m, ComputedAt = "2026-08-15" },
-                    new() { Symbol = "IOC", CompanyName = "Indian Oil Corporation Limited", Sector = "Oil Gas & Consumable Fuels", Exchange = exchange, MarketCap = 180500.00m, NetProfitTtm = 12800.0m, PeRatio = 14.1m, Roe = 14.2m, ComputedAt = "2026-08-15" },
-                    new() { Symbol = "BPCL", CompanyName = "Bharat Petroleum Corporation Limited", Sector = "Oil Gas & Consumable Fuels", Exchange = exchange, MarketCap = 135000.00m, NetProfitTtm = 11200.0m, PeRatio = 12.0m, Roe = 16.8m, ComputedAt = "2026-08-15" },
-                    new() { Symbol = "OIL", CompanyName = "Oil India Limited", Sector = "Oil Gas & Consumable Fuels", Exchange = exchange, MarketCap = 68000.00m, NetProfitTtm = 5500.0m, PeRatio = 12.3m, Roe = 15.4m, ComputedAt = "2026-08-15" },
-                    // Negative profit company to test exclusion from sector P/E calculation
-                    new() { Symbol = "MRPL_NEG_TEST", CompanyName = "Mangalore Refinery (Loss Test)", Sector = "Oil Gas & Consumable Fuels", Exchange = exchange, MarketCap = 35000.00m, NetProfitTtm = -2500.0m, PeRatio = null, Roe = -5.2m, ComputedAt = "2026-08-15" }
-                };
-            }
-
-            if (cleanSector.Equals("Information Technology", StringComparison.OrdinalIgnoreCase) ||
-                cleanSector.Contains("Technology", StringComparison.OrdinalIgnoreCase) ||
-                cleanSector.Contains("IT", StringComparison.OrdinalIgnoreCase))
-            {
-                return new List<BharatStockScreenerRecord>
-                {
-                    new() { Symbol = "TCS", CompanyName = "Tata Consultancy Services Limited", Sector = "Information Technology", Exchange = exchange, MarketCap = 1492800.00m, NetProfitTtm = 46580.0m, PeRatio = 28.5m, Roe = 48.2m, ComputedAt = "2026-08-15" },
-                    new() { Symbol = "INFY", CompanyName = "Infosys Limited", Sector = "Information Technology", Exchange = exchange, MarketCap = 768250.00m, NetProfitTtm = 26248.0m, PeRatio = 26.1m, Roe = 31.5m, ComputedAt = "2026-08-15" },
-                    new() { Symbol = "HCLTECH", CompanyName = "HCL Technologies Limited", Sector = "Information Technology", Exchange = exchange, MarketCap = 430000.00m, NetProfitTtm = 15700.0m, PeRatio = 27.4m, Roe = 25.1m, ComputedAt = "2026-08-15" },
-                    new() { Symbol = "WIPRO", CompanyName = "Wipro Limited", Sector = "Information Technology", Exchange = exchange, MarketCap = 280000.00m, NetProfitTtm = 11100.0m, PeRatio = 25.2m, Roe = 15.8m, ComputedAt = "2026-08-15" },
-                    new() { Symbol = "TECHM", CompanyName = "Tech Mahindra Limited", Sector = "Information Technology", Exchange = exchange, MarketCap = 150000.00m, NetProfitTtm = 2400.0m, PeRatio = 62.5m, Roe = 8.2m, ComputedAt = "2026-08-15" }
-                };
-            }
-
-            if (cleanSector.Equals("Automobile", StringComparison.OrdinalIgnoreCase) ||
-                cleanSector.Contains("Auto", StringComparison.OrdinalIgnoreCase))
-            {
-                return new List<BharatStockScreenerRecord>
-                {
-                    new() { Symbol = "TATAMOTORS", CompanyName = "Tata Motors Limited", Sector = "Automobile", Exchange = exchange, MarketCap = 345600.00m, NetProfitTtm = 31800.0m, PeRatio = 16.8m, Roe = 22.4m, ComputedAt = "2026-08-15" },
-                    new() { Symbol = "MARUTI", CompanyName = "Maruti Suzuki India Limited", Sector = "Automobile", Exchange = exchange, MarketCap = 390000.00m, NetProfitTtm = 13200.0m, PeRatio = 29.5m, Roe = 16.8m, ComputedAt = "2026-08-15" },
-                    new() { Symbol = "M&M", CompanyName = "Mahindra & Mahindra Limited", Sector = "Automobile", Exchange = exchange, MarketCap = 350000.00m, NetProfitTtm = 11500.0m, PeRatio = 30.4m, Roe = 19.5m, ComputedAt = "2026-08-15" },
-                    new() { Symbol = "BAJAJ-AUTO", CompanyName = "Bajaj Auto Limited", Sector = "Automobile", Exchange = exchange, MarketCap = 280000.00m, NetProfitTtm = 7500.0m, PeRatio = 37.3m, Roe = 24.1m, ComputedAt = "2026-08-15" },
-                    new() { Symbol = "EICHERMOT", CompanyName = "Eicher Motors Limited", Sector = "Automobile", Exchange = exchange, MarketCap = 135000.00m, NetProfitTtm = 4000.0m, PeRatio = 33.7m, Roe = 21.0m, ComputedAt = "2026-08-15" }
-                };
-            }
-
-            if (cleanSector.Equals("Financial Services", StringComparison.OrdinalIgnoreCase) ||
-                cleanSector.Contains("Bank", StringComparison.OrdinalIgnoreCase) ||
-                cleanSector.Contains("Financial", StringComparison.OrdinalIgnoreCase))
-            {
-                return new List<BharatStockScreenerRecord>
-                {
-                    new() { Symbol = "HDFCBANK", CompanyName = "HDFC Bank Limited", Sector = "Financial Services", Exchange = exchange, MarketCap = 1250000.00m, NetProfitTtm = 64000.0m, PeRatio = 18.5m, Roe = 16.8m, ComputedAt = "2026-08-15" },
-                    new() { Symbol = "ICICIBANK", CompanyName = "ICICI Bank Limited", Sector = "Financial Services", Exchange = exchange, MarketCap = 860000.00m, NetProfitTtm = 44000.0m, PeRatio = 17.2m, Roe = 18.2m, ComputedAt = "2026-08-15" },
-                    new() { Symbol = "SBIN", CompanyName = "State Bank of India", Sector = "Financial Services", Exchange = exchange, MarketCap = 720000.00m, NetProfitTtm = 61000.0m, PeRatio = 11.8m, Roe = 16.5m, ComputedAt = "2026-08-15" },
-                    new() { Symbol = "KOTAKBANK", CompanyName = "Kotak Mahindra Bank Limited", Sector = "Financial Services", Exchange = exchange, MarketCap = 350000.00m, NetProfitTtm = 18000.0m, PeRatio = 19.4m, Roe = 14.1m, ComputedAt = "2026-08-15" },
-                    new() { Symbol = "AXISBANK", CompanyName = "Axis Bank Limited", Sector = "Financial Services", Exchange = exchange, MarketCap = 360000.00m, NetProfitTtm = 26000.0m, PeRatio = 13.8m, Roe = 17.0m, ComputedAt = "2026-08-15" }
-                };
-            }
-
-            // Default generic sector peer list
-            return new List<BharatStockScreenerRecord>
-            {
-                new() { Symbol = "PEER_A", CompanyName = $"{cleanSector} Leader A", Sector = cleanSector, Exchange = exchange, MarketCap = 100000.00m, NetProfitTtm = 4500.0m, PeRatio = 22.2m, Roe = 15.0m, ComputedAt = "2026-08-15" },
-                new() { Symbol = "PEER_B", CompanyName = $"{cleanSector} Midcap B", Sector = cleanSector, Exchange = exchange, MarketCap = 50000.00m, NetProfitTtm = 2100.0m, PeRatio = 23.8m, Roe = 14.2m, ComputedAt = "2026-08-15" },
-                new() { Symbol = "PEER_C", CompanyName = $"{cleanSector} Growth C", Sector = cleanSector, Exchange = exchange, MarketCap = 25000.00m, NetProfitTtm = 1100.0m, PeRatio = 22.7m, Roe = 16.1m, ComputedAt = "2026-08-15" }
             };
         }
 

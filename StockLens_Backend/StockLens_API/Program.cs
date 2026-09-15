@@ -96,6 +96,7 @@ builder.Services.AddScoped<ISectorValuationService, SectorValuationService>();
 builder.Services.AddScoped<IStockCashflowService, StockCashflowService>();
 builder.Services.AddScoped<IStockBalanceSheetService, StockBalanceSheetService>();
 builder.Services.AddScoped<IStockPriceHistoryService, StockPriceHistoryService>();
+builder.Services.AddScoped<IStockQuarterlyResultsService, StockQuarterlyResultsService>();
 
 // Register AutoMapper
 builder.Services.AddAutoMapper(cfg => cfg.AddProfile<MapperProfile>());

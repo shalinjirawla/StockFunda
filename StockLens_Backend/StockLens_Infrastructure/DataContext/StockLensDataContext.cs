@@ -246,8 +246,40 @@ namespace StockLens_Infrastructure.DataContext
                     .HasPrecision(18, 2)
                     .IsRequired(false);
 
+                entity.Property(f => f.Expenses)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
                 entity.Property(f => f.OperatingProfit)
                     .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.OperatingProfitMargin)
+                    .HasPrecision(8, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.OtherIncome)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.Interest)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.Depreciation)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.ProfitBeforeTax)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.Tax)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.TaxPercentage)
+                    .HasPrecision(8, 2)
                     .IsRequired(false);
 
                 entity.Property(f => f.NetProfit)

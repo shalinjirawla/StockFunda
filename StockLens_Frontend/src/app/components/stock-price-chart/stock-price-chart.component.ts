@@ -29,8 +29,8 @@ export class StockPriceChartComponent implements OnChanges, OnInit {
   // Track user's legend selections so they persist across refreshes
   activeSeriesState: { [key: string]: boolean } = {
     'Price': true,
-    '50 DMA': false,
-    '200 DMA': false,
+    '50 DMA': true,
+    '200 DMA': true,
     'Volume': true
   };
 

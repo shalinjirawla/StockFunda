@@ -7,18 +7,21 @@ import { StockNewsService } from '../../services/stock-news.service';
 import { StockShareholdingService } from '../../services/stock-shareholding.service';
 import { StockCashflowService } from '../../services/stock-cashflow.service';
 import { StockBalanceSheetService, BalanceSheetResponseDto } from '../../services/stock-balancesheet.service';
+import { StockQuarterlyResultsService } from '../../services/stock-quarterly-results.service';
 import { Stock, Company, StockNewsResponse, LoadingState } from '../../models/stock-news.model';
 import { StockShareholdingResponse } from '../../models/stock-shareholding.model';
 import { StockCashflowResponse } from '../../models/stock-cashflow.model';
+import { StockQuarterlyResultsResponse } from '../../models/stock-quarterly-results.model';
 import { StockNewsCardComponent } from '../stock-news-card/stock-news-card.component';
 import { StockShareholdingCardComponent } from '../stock-shareholding-card/stock-shareholding-card.component';
 import { StockCashflowCardComponent } from '../stock-cashflow-card/stock-cashflow-card.component';
 import { StockAssetGrowthCardComponent } from '../stock-asset-growth-card/stock-asset-growth-card.component';
 import { StockPriceChartComponent } from '../stock-price-chart/stock-price-chart.component';
 import { StockRatiosValuationCardComponent } from '../stock-ratios-valuation-card/stock-ratios-valuation-card.component';
+import { StockQuartersCardComponent } from '../stock-quarters-card/stock-quarters-card.component';
 import { TimeAgoPipe } from '../../pipes/time-ago.pipe';
 
-export type DashboardSection = 'overview' | 'ratios' | 'cashflow' | 'balancesheet' | 'shareholding' | 'chart' | 'news';
+export type DashboardSection = 'overview' | 'ratios' | 'cashflow' | 'balancesheet' | 'shareholding' | 'quarters' | 'chart' | 'news';
 
 @Component({
   selector: 'app-stock-dashboard',
@@ -32,6 +35,7 @@ export type DashboardSection = 'overview' | 'ratios' | 'cashflow' | 'balanceshee
     StockAssetGrowthCardComponent,
     StockPriceChartComponent,
     StockRatiosValuationCardComponent,
+    StockQuartersCardComponent,
     TimeAgoPipe
   ],
   templateUrl: './stock-dashboard.component.html',
@@ -42,6 +46,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
   private readonly shareholdingService = inject(StockShareholdingService);
   private readonly cashflowService = inject(StockCashflowService);
   private readonly financialsService = inject(StockBalanceSheetService);
+  private readonly quartersService = inject(StockQuarterlyResultsService);
   private readonly cd = inject(ChangeDetectorRef);
 
   // Quick select stocks
@@ -71,6 +76,12 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
   shareholdingLoadingState = signal<LoadingState>('idle');
   shareholdingErrorMessage = signal<string>('');
   isShareholdingRefreshing = signal<boolean>(false);
+
+  // Quarters State
+  quartersResponse = signal<StockQuarterlyResultsResponse | null>(null);
+  quartersLoadingState = signal<LoadingState>('idle');
+  quartersErrorMessage = signal<string>('');
+  isQuartersRefreshing = signal<boolean>(false);
 
   // Cashflow State
   cashflowResponse = signal<StockCashflowResponse | null>(null);
@@ -143,6 +154,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
       'cashflow',
       'balancesheet',
       'shareholding',
+      'quarters',
       'chart',
       'news'
     ];
@@ -282,6 +294,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     this.fetchCashflow(isRefresh);
     this.fetchBalanceSheet(isRefresh);
     this.fetchShareholding(isRefresh);
+    this.fetchQuarterlyResults(isRefresh);
     this.fetchNews(isRefresh);
   }
 
@@ -291,6 +304,37 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     setTimeout(() => {
       this.isSyncingAll.set(false);
     }, 1500);
+  }
+
+  fetchQuarterlyResults(isRefresh: boolean): void {
+    if (isRefresh) {
+      this.isQuartersRefreshing.set(true);
+    } else {
+      this.quartersLoadingState.set('loading');
+    }
+    this.quartersErrorMessage.set('');
+
+    const symbol = this.selectedSymbol();
+    const exchange = this.selectedExchange();
+
+    this.quartersService.getQuarterlyResultsBySymbol(symbol, exchange, isRefresh).subscribe({
+      next: (data) => {
+        this.quartersResponse.set(data);
+        this.isQuartersRefreshing.set(false);
+        if (data && data.history && data.history.length > 0) {
+          this.quartersLoadingState.set('success');
+        } else {
+          this.quartersLoadingState.set('empty');
+        }
+      },
+      error: (err) => {
+        this.isQuartersRefreshing.set(false);
+        this.quartersLoadingState.set('error');
+        this.quartersErrorMessage.set(
+          err.error?.detail || err.error?.message || 'Failed to retrieve quarterly results.'
+        );
+      }
+    });
   }
 
   fetchBalanceSheet(isRefresh: boolean): void {
@@ -414,7 +458,8 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
   }
 
   getCompanyName(): string {
-    return this.cashflowResponse()?.companyName ||
+    return this.quartersResponse()?.companyName ||
+      this.cashflowResponse()?.companyName ||
       this.shareholdingResponse()?.companyName ||
       this.newsResponse()?.companyName ||
       this.selectedSymbol();

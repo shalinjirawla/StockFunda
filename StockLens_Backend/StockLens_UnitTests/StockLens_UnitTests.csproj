@@ -21,7 +21,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\StockLens_API\StockLens_API.csproj" />
     <ProjectReference Include="..\StockLens_BusinessLayer\StockLens_BusinessLayer.csproj" />
     <ProjectReference Include="..\StockLens_DataLayer\StockLens_DataLayer.csproj" />
     <ProjectReference Include="..\StockLens_Infrastructure\StockLens_Infrastructure.csproj" />

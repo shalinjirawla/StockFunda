@@ -30,6 +30,139 @@ namespace StockLens_UnitTests
         }
 
         [Fact]
+        public async Task LiveTest_DirectIndianApiStockOverview()
+        {
+            var secretPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "Microsoft", "UserSecrets", "stocklens-api-e6a839f1-469b-4682-841f-823908c69134", "secrets.json");
+
+            if (!File.Exists(secretPath))
+            {
+                _output.WriteLine("User secrets not found. Skipping live test.");
+                return;
+            }
+
+            var secretJson = await File.ReadAllTextAsync(secretPath);
+            using var doc = JsonDocument.Parse(secretJson);
+            var apiKey = doc.RootElement.GetProperty("IndianApi:ApiKey").GetString() ?? "";
+
+            using var httpClient = new HttpClient { BaseAddress = new Uri("https://stock.indianapi.in/") };
+            httpClient.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
+
+            var res = await httpClient.GetAsync("stock?name=RELIANCE");
+            _output.WriteLine($"Status: {res.StatusCode}");
+            var body = await res.Content.ReadAsStringAsync();
+            _output.WriteLine($"Body length: {body.Length}");
+
+            using var doc2 = JsonDocument.Parse(body);
+            foreach (var prop in doc2.RootElement.EnumerateObject())
+            {
+                if (prop.Value.ValueKind == JsonValueKind.Object)
+                {
+                    _output.WriteLine($"Key: {prop.Name} (Object) -> Subkeys: {string.Join(", ", prop.Value.EnumerateObject().Select(p => p.Name).Take(15))}");
+                }
+                else if (prop.Value.ValueKind == JsonValueKind.Array)
+                {
+                    _output.WriteLine($"Key: {prop.Name} (Array of {prop.Value.GetArrayLength()} items)");
+                }
+                else
+                {
+                    _output.WriteLine($"Key: {prop.Name} = {prop.Value}");
+                }
+            }
+
+            using var httpClient2 = new HttpClient();
+            var client = new IndianApiBalanceSheetClient(
+                httpClient2,
+                Microsoft.Extensions.Options.Options.Create(new IndianApiSettings { ApiKey = apiKey, BaseUrl = "https://stock.indianapi.in" }),
+                new Microsoft.Extensions.Logging.Abstractions.NullLogger<IndianApiBalanceSheetClient>());
+
+            var result = await client.GetStockFinancialsAndOverviewAsync("RELIANCE");
+            _output.WriteLine($"Result - CurrentPrice: {result?.CurrentPrice}");
+            _output.WriteLine($"Result - YearHigh: {result?.YearHigh}");
+            _output.WriteLine($"Result - YearLow: {result?.YearLow}");
+            _output.WriteLine($"Result - FaceValue: {result?.FaceValue}");
+            _output.WriteLine($"Result - MarketCap: {result?.MarketCap}");
+            _output.WriteLine($"Result - PeRatio: {result?.PeRatio}");
+            _output.WriteLine($"Result - Roe: {result?.Roe}");
+            _output.WriteLine($"Result - Roce: {result?.Roce}");
+            _output.WriteLine($"Result - BookValue: {result?.BookValue}");
+            _output.WriteLine($"Result - Financials count: {result?.Financials?.Count}");
+
+            result.Should().NotBeNull();
+            result!.CurrentPrice.Should().BeGreaterThan(0);
+            result.YearHigh.Should().BeGreaterThan(0);
+            result.YearLow.Should().BeGreaterThan(0);
+            result.FaceValue.Should().BeGreaterThan(0);
+            result.MarketCap.Should().BeGreaterThan(0);
+            result.PeRatio.Should().BeGreaterThan(0);
+            result.Roe.Should().BeGreaterThan(0);
+            result.Roce.Should().BeGreaterThan(0);
+            result.BookValue.Should().BeGreaterThan(0);
+        }
+
+        [Fact]
+        public async Task LiveTest_QuarterlyResultsDetailed()
+        {
+            var secretPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "Microsoft", "UserSecrets", "stocklens-api-e6a839f1-469b-4682-841f-823908c69134", "secrets.json");
+
+            if (!File.Exists(secretPath))
+            {
+                _output.WriteLine("User secrets not found. Skipping live test.");
+                return;
+            }
+
+            var secretJson = await File.ReadAllTextAsync(secretPath);
+            using var doc = JsonDocument.Parse(secretJson);
+            var apiKey = doc.RootElement.GetProperty("IndianApi:ApiKey").GetString() ?? "";
+
+            using var httpClient = new HttpClient { BaseAddress = new Uri("https://stock.indianapi.in/") };
+            httpClient.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
+
+            var res = await httpClient.GetAsync("stock?name=RELIANCE");
+            var body = await res.Content.ReadAsStringAsync();
+            using var doc2 = JsonDocument.Parse(body);
+
+            _output.WriteLine("\n--- RAW QUARTERLY PERIODS IN INDIANAPI PAYLOAD ---");
+            if (doc2.RootElement.TryGetProperty("financials", out var finArray))
+            {
+                int idx = 0;
+                foreach (var fin in finArray.EnumerateArray())
+                {
+                    var type = fin.TryGetProperty("Type", out var t) ? t.GetString() : "N/A";
+                    var ed = fin.TryGetProperty("EndDate", out var e) ? e.GetString() : "N/A";
+                    var fy = fin.TryGetProperty("FiscalYear", out var f) ? f.GetString() : "N/A";
+                    var pl = fin.TryGetProperty("periodLength", out var p) ? p.GetString() : "N/A";
+                    _output.WriteLine($"[Period {idx++}] Type: {type}, EndDate: {ed}, FiscalYear: {fy}, PeriodLength: {pl}");
+
+                    if (fin.TryGetProperty("stockFinancialMap", out var map) && map.ValueKind == JsonValueKind.Object)
+                    {
+                        if (map.TryGetProperty("INC", out var inc) && inc.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var item in inc.EnumerateArray())
+                            {
+                                var k = item.GetProperty("key").GetString();
+                                var v = item.GetProperty("value").GetString();
+                                _output.WriteLine($"   [INC] {k} = {v}");
+                            }
+                        }
+                        if (map.TryGetProperty("CAS", out var cas) && cas.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var item in cas.EnumerateArray())
+                            {
+                                var k = item.GetProperty("key").GetString();
+                                var v = item.GetProperty("value").GetString();
+                                _output.WriteLine($"   [CAS] {k} = {v}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        [Fact]
         public async Task LiveTest_SyncAndPersistAllFourIndianStocks()
         {
             var secretPath = Path.Combine(
@@ -47,12 +180,11 @@ namespace StockLens_UnitTests
             var apiKey = doc.RootElement.GetProperty("IndianApi:ApiKey").GetString() ?? "";
 
             var services = new ServiceCollection();
-            services.AddLogging(cfg => cfg.AddConsole().SetMinimumLevel(LogLevel.Information));
+            services.AddLogging();
 
-            // Use the real SQL Server database
             services.AddDbContext<StockLensDataContext>(options =>
             {
-                options.UseSqlServer("Server=DESKTOP-J2CVHIQ;Database=StockLensDB;Trusted_Connection=True;Encrypt=False;");
+                options.UseInMemoryDatabase("TestShareholdingLive_" + Guid.NewGuid());
             });
 
             services.Configure<IndianApiSettings>(opts =>
@@ -151,5 +283,165 @@ namespace StockLens_UnitTests
                 result.CurrentPeriod.Public.Should().NotBeNull("Public holding should be populated");
             }
         }
+
+        [Fact]
+        public async Task LiveTest_StockCashflowServiceFaceValueAndMarketCap()
+        {
+            var secretPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "Microsoft", "UserSecrets", "stocklens-api-e6a839f1-469b-4682-841f-823908c69134", "secrets.json");
+
+            if (!File.Exists(secretPath))
+            {
+                _output.WriteLine("User secrets not found. Skipping live test.");
+                return;
+            }
+
+            var secretJson = await File.ReadAllTextAsync(secretPath);
+            using var doc = JsonDocument.Parse(secretJson);
+            var apiKey = doc.RootElement.GetProperty("IndianApi:ApiKey").GetString() ?? "";
+
+            var services = new ServiceCollection();
+            services.AddLogging();
+            services.AddMemoryCache();
+
+            services.AddDbContext<StockLensDataContext>(options =>
+            {
+                options.UseInMemoryDatabase("TestCashflowLive_" + Guid.NewGuid());
+            });
+
+            services.Configure<IndianApiSettings>(opts =>
+            {
+                opts.BaseUrl = "https://stock.indianapi.in";
+                opts.ApiKey = apiKey;
+            });
+
+            services.Configure<BharatStockSettings>(opts =>
+            {
+                opts.BaseUrl = "https://bharatstockapi.com";
+                opts.ApiKey = "";
+            });
+
+            services.AddHttpClient<IIndianApiBalanceSheetClient, IndianApiBalanceSheetClient>((sp, client) =>
+            {
+                client.BaseAddress = new Uri("https://stock.indianapi.in/");
+                client.Timeout = TimeSpan.FromSeconds(20);
+                client.DefaultRequestHeaders.Add("Accept", "application/json");
+            });
+
+            services.AddHttpClient<StockLens_Infrastructure.ExternalServices.YahooFinanceApi.IYahooFinanceClient, StockLens_Infrastructure.ExternalServices.YahooFinanceApi.YahooFinanceClient>(client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(10);
+            });
+
+            services.AddScoped<IFinancialProvider, MockFinancialProvider>();
+            services.AddScoped<IStockRepository, StockRepository>();
+            services.AddScoped<ICompanyRepository, CompanyRepository>();
+            services.AddScoped<IStockFinancialRepository, StockFinancialRepository>();
+            services.AddScoped<IStockBalanceSheetRepository, StockBalanceSheetRepository>();
+            services.AddScoped<ISectorValuationService, SectorValuationService>();
+            services.AddScoped<IStockCashflowService, StockCashflowService>();
+            services.AddAutoMapper(cfg => cfg.AddProfile<MapperProfile>());
+
+            var sp = services.BuildServiceProvider();
+            var service = sp.GetRequiredService<IStockCashflowService>();
+
+            string[] testStocks = new[] { "RELIANCE", "TCS", "INFY", "HDFCBANK", "TATAMOTORS" };
+
+            foreach (var sym in testStocks)
+            {
+                _output.WriteLine($"\n--- Testing {sym} (Cached / Normal Fetch) ---");
+                var cached = await service.GetCashflowBySymbolAsync(sym, "NSE", forceRefresh: false);
+                _output.WriteLine($"[{sym}] Cached FaceValue: {cached?.Ratios?.FaceValue}");
+                _output.WriteLine($"[{sym}] Cached MarketCap: {cached?.Ratios?.MarketCap}");
+                _output.WriteLine($"[{sym}] Cached CurrentPrice: {cached?.Ratios?.CurrentPrice}");
+                _output.WriteLine($"[{sym}] Cached TotalEquity: {cached?.Ratios?.TotalEquity}");
+                _output.WriteLine($"[{sym}] Cached BookValue: {cached?.Ratios?.BookValue}");
+                _output.WriteLine($"[{sym}] Cached Roe: {cached?.Ratios?.Roe}");
+                _output.WriteLine($"[{sym}] Cached Roce: {cached?.Ratios?.Roce}");
+                _output.WriteLine($"[{sym}] Cached PeRatio: {cached?.Ratios?.PeRatio}");
+
+                cached.Should().NotBeNull();
+                cached!.Ratios.Should().NotBeNull();
+                cached.Ratios!.FaceValue.Should().NotBeNull($"FaceValue should not be null for {sym}");
+                cached.Ratios.MarketCap.Should().NotBeNull($"MarketCap should not be null for {sym}");
+            }
+        }
+
+        [Fact]
+        public async Task LiveTest_SyncQuarterlyResultsLiveEndToEnd()
+        {
+            var secretPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "Microsoft", "UserSecrets", "stocklens-api-e6a839f1-469b-4682-841f-823908c69134", "secrets.json");
+
+            if (!File.Exists(secretPath))
+            {
+                _output.WriteLine("User secrets not found. Skipping live test.");
+                return;
+            }
+
+            var secretJson = await File.ReadAllTextAsync(secretPath);
+            using var doc = JsonDocument.Parse(secretJson);
+            var apiKey = doc.RootElement.GetProperty("IndianApi:ApiKey").GetString() ?? "";
+
+            var services = new ServiceCollection();
+            services.AddLogging();
+            services.AddMemoryCache();
+
+            services.AddDbContext<StockLensDataContext>(options =>
+            {
+                options.UseInMemoryDatabase("TestQuarterlyLive_" + Guid.NewGuid());
+            });
+
+            services.Configure<IndianApiSettings>(opts =>
+            {
+                opts.BaseUrl = "https://stock.indianapi.in";
+                opts.ApiKey = apiKey;
+            });
+
+            services.AddHttpClient<IIndianApiBalanceSheetClient, IndianApiBalanceSheetClient>((sp, client) =>
+            {
+                client.BaseAddress = new Uri("https://stock.indianapi.in/");
+                client.Timeout = TimeSpan.FromSeconds(20);
+                client.DefaultRequestHeaders.Add("Accept", "application/json");
+            });
+
+            services.AddHttpClient<StockLens_Infrastructure.ExternalServices.YahooFinanceApi.IYahooFinanceClient, StockLens_Infrastructure.ExternalServices.YahooFinanceApi.YahooFinanceClient>(client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(10);
+            });
+
+            services.AddScoped<IStockRepository, StockRepository>();
+            services.AddScoped<ICompanyRepository, CompanyRepository>();
+            services.AddScoped<IStockFinancialRepository, StockFinancialRepository>();
+            services.AddScoped<IStockQuarterlyResultsService, StockQuarterlyResultsService>();
+            services.AddAutoMapper(cfg => cfg.AddProfile<MapperProfile>());
+
+            var sp = services.BuildServiceProvider();
+            var service = sp.GetRequiredService<IStockQuarterlyResultsService>();
+
+            string[] testStocks = new[] { "RELIANCE", "TCS", "INFY", "HDFCBANK" };
+
+            foreach (var sym in testStocks)
+            {
+                _output.WriteLine($"\n========================================================");
+                _output.WriteLine($"TESTING LIVE QUARTERLY FOR STOCK: {sym}");
+                _output.WriteLine($"========================================================");
+
+                var res = await service.GetQuarterlyResultsBySymbolAsync(sym, "NSE", forceRefresh: true);
+
+                res.Should().NotBeNull();
+                _output.WriteLine($"Stock: {res.Symbol} | LatestQuarter: {res.LatestQuarter} | Source: {res.Source}");
+                _output.WriteLine($"[Summary] Sales: {res.Summary.Sales} Cr | NetProfit: {res.Summary.NetProfit} Cr | EPS: {res.Summary.Eps} | Tax: {res.Summary.Tax} Cr | Depreciation: {res.Summary.Depreciation} Cr");
+
+                _output.WriteLine("\n[History Quarters]");
+                foreach (var h in res.History)
+                {
+                    _output.WriteLine($"  Period: {h.Period} | Date: {h.PeriodEndDate:yyyy-MM-dd} | Sales: {h.Sales} | NetProfit: {h.NetProfit} | EPS: {h.Eps} | Tax: {h.Tax} | Dep: {h.Depreciation}");
+                }
+            }
+        }
     }
 }
+

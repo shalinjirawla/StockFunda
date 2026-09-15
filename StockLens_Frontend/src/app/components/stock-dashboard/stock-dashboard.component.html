@@ -131,6 +131,15 @@
         <button
           type="button"
           class="subnav-tab"
+          [class.active]="activeSection() === 'quarters'"
+          (click)="scrollToSection('quarters')"
+        >
+          Quarters
+        </button>
+
+        <button
+          type="button"
+          class="subnav-tab"
           [class.active]="activeSection() === 'chart'"
           (click)="scrollToSection('chart')"
         >
@@ -257,7 +266,22 @@
     </section>
 
     <!-- ================================================================= -->
-    <!-- SECTION 6: INTERACTIVE PRICE & VOLUME CHART (Before News)         -->
+    <!-- SECTION 6: QUARTERLY RESULTS (Revenue, Net Profit, EPS, Tax, Depr) -->
+    <!-- ================================================================= -->
+    <section id="section-quarters" class="report-section quarters-section">
+      <div class="screener-card">
+        <app-stock-quarters-card
+          [quarters]="quartersResponse()"
+          [loadingState]="quartersLoadingState()"
+          [errorMessage]="quartersErrorMessage()"
+          [isRefreshing]="isQuartersRefreshing()"
+          (refreshRequested)="fetchQuarterlyResults(true)"
+        ></app-stock-quarters-card>
+      </div>
+    </section>
+
+    <!-- ================================================================= -->
+    <!-- SECTION 7: INTERACTIVE PRICE & VOLUME CHART (Before News)         -->
     <!-- ================================================================= -->
     <section id="section-chart" class="report-section chart-section">
       <div class="screener-card">

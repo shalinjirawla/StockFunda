@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using StockLens_Infrastructure.ExternalServices.YahooFinanceApi;
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
@@ -79,102 +80,26 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
             }
         }
 
+        public async Task<YahooLiveQuoteDto?> GetLiveQuoteAsync(string symbol, string? exchange = "NSE", CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(symbol)) return null;
+
+            var overview = await GetStockFinancialsAndOverviewAsync(symbol, exchange, cancellationToken);
+            if (overview == null) return null;
+
+            return new YahooLiveQuoteDto
+            {
+                Symbol = overview.Symbol,
+                Price = overview.CurrentPrice,
+                YearHigh = overview.YearHigh,
+                YearLow = overview.YearLow
+            };
+        }
+
         public async Task<decimal?> GetCurrentPriceAsync(string symbol, string? exchange = "NSE", CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(symbol))
-            {
-                return null;
-            }
-
-            var cleanStock = symbol.Trim().ToUpperInvariant();
-            var endpoint = $"stock?name={Uri.EscapeDataString(cleanStock)}";
-
-            using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
-
-            if (!string.IsNullOrWhiteSpace(_settings.ApiKey))
-            {
-                var cleanApiKey = System.Text.RegularExpressions.Regex.Replace(_settings.ApiKey, @"[^\x20-\x7E]", "").Trim();
-                if (!string.IsNullOrWhiteSpace(cleanApiKey))
-                {
-                    request.Headers.TryAddWithoutValidation("X-Api-Key", cleanApiKey);
-                }
-            }
-
-            _logger.LogInformation("Fetching current price from IndianAPI GET /stock for symbol: {Symbol}", cleanStock);
-
-            try
-            {
-                using var response = await _httpClient.SendAsync(request, cancellationToken);
-                if (!response.IsSuccessStatusCode)
-                {
-                    _logger.LogWarning("IndianAPI /stock returned status {StatusCode} for symbol {Symbol}", response.StatusCode, cleanStock);
-                    return null;
-                }
-
-                var json = await response.Content.ReadAsStringAsync(cancellationToken);
-                using var doc = JsonDocument.Parse(json);
-                var root = doc.RootElement;
-
-                JsonElement target = root;
-                if (root.ValueKind == JsonValueKind.Array && root.GetArrayLength() > 0)
-                {
-                    target = root[0];
-                }
-
-                if (target.ValueKind == JsonValueKind.Object)
-                {
-                    // 1. Check currentPrice object (e.g., {"NSE": 2980.50, "BSE": 2975.00})
-                    if (target.TryGetProperty("currentPrice", out var cpProp) || target.TryGetProperty("current_price", out cpProp))
-                    {
-                        if (cpProp.ValueKind == JsonValueKind.Object)
-                        {
-                            var cleanExchange = string.IsNullOrWhiteSpace(exchange) ? "NSE" : exchange.Trim().ToUpperInvariant();
-                            if (cpProp.TryGetProperty(cleanExchange, out var exVal) && TryExtractDecimal(exVal, out var price))
-                            {
-                                return price;
-                            }
-                            if (cpProp.TryGetProperty("NSE", out var nseVal) && TryExtractDecimal(nseVal, out price))
-                            {
-                                return price;
-                            }
-                            if (cpProp.TryGetProperty("BSE", out var bseVal) && TryExtractDecimal(bseVal, out price))
-                            {
-                                return price;
-                            }
-                            foreach (var prop in cpProp.EnumerateObject())
-                            {
-                                if (TryExtractDecimal(prop.Value, out price)) return price;
-                            }
-                        }
-                        else if (TryExtractDecimal(cpProp, out var price))
-                        {
-                            return price;
-                        }
-                    }
-
-                    // 2. Check direct price property
-                    if (target.TryGetProperty("price", out var pProp) && TryExtractDecimal(pProp, out var p))
-                    {
-                        return p;
-                    }
-
-                    // 3. Check stockTechnicalData.lastTradedPrice
-                    if (target.TryGetProperty("stockTechnicalData", out var techProp) && techProp.ValueKind == JsonValueKind.Object)
-                    {
-                        if (techProp.TryGetProperty("lastTradedPrice", out var ltp) && TryExtractDecimal(ltp, out var techPrice))
-                        {
-                            return techPrice;
-                        }
-                    }
-                }
-
-                return null;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error fetching current price for {Symbol} from IndianAPI.", cleanStock);
-                return null;
-            }
+            var quote = await GetLiveQuoteAsync(symbol, exchange, cancellationToken);
+            return quote?.Price;
         }
 
         public async Task<IndianApiStockOverviewDto?> GetStockFinancialsAndOverviewAsync(
@@ -202,17 +127,22 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
             }
 
             _logger.LogInformation("Fetching stock overview & financials from IndianAPI GET /stock for symbol: {Symbol}", cleanStock);
+            Console.WriteLine($"[IndianAPI /stock] Requesting symbol: '{cleanStock}', API Key present: {!string.IsNullOrWhiteSpace(_settings.ApiKey)}");
 
             try
             {
                 using var response = await _httpClient.SendAsync(request, cancellationToken);
+                Console.WriteLine($"[IndianAPI /stock] Response status: {response.StatusCode} for symbol: {cleanStock}");
                 if (!response.IsSuccessStatusCode)
                 {
+                    var errBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                    Console.WriteLine($"[IndianAPI /stock ERROR Body]: {errBody}");
                     _logger.LogWarning("IndianAPI /stock returned status {StatusCode} for symbol {Symbol}", response.StatusCode, cleanStock);
                     return null;
                 }
 
                 var json = await response.Content.ReadAsStringAsync(cancellationToken);
+                Console.WriteLine($"[IndianAPI /stock] Received JSON payload ({json.Length} chars)");
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
 
@@ -224,6 +154,7 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
 
                 if (target.ValueKind != JsonValueKind.Object)
                 {
+                    Console.WriteLine("[IndianAPI /stock] Target is not a JSON object, returning null.");
                     return null;
                 }
 
@@ -232,26 +163,47 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
                     Symbol = cleanStock
                 };
 
-                if (target.TryGetProperty("companyName", out var cnProp) && cnProp.ValueKind == JsonValueKind.String)
+                // Helper scopes for searching JSON fields
+                var scopes = new List<JsonElement> { target };
+                if (target.TryGetProperty("stockDetailsReusableData", out var sdrdObj) && sdrdObj.ValueKind == JsonValueKind.Object) scopes.Add(sdrdObj);
+                if (target.TryGetProperty("stockTechnicalData", out var techObj))
                 {
-                    dto.CompanyName = cnProp.GetString();
-                }
-
-                if (target.TryGetProperty("industry", out var indProp) && indProp.ValueKind == JsonValueKind.String)
-                {
-                    dto.Industry = indProp.GetString();
-                    dto.SectorName = dto.Industry;
-                }
-                else if (target.TryGetProperty("companyProfile", out var cpProf) && cpProf.ValueKind == JsonValueKind.Object)
-                {
-                    if (cpProf.TryGetProperty("mgIndustry", out var mgInd) && mgInd.ValueKind == JsonValueKind.String)
+                    if (techObj.ValueKind == JsonValueKind.Object) scopes.Add(techObj);
+                    else if (techObj.ValueKind == JsonValueKind.Array)
                     {
-                        dto.Industry = mgInd.GetString();
-                        dto.SectorName = dto.Industry;
+                        foreach (var el in techObj.EnumerateArray())
+                        {
+                            if (el.ValueKind == JsonValueKind.Object) scopes.Add(el);
+                        }
                     }
                 }
+                if (target.TryGetProperty("technicalData", out var techObj2) && techObj2.ValueKind == JsonValueKind.Object) scopes.Add(techObj2);
+                if (target.TryGetProperty("companyProfile", out var cpObj) && cpObj.ValueKind == JsonValueKind.Object) scopes.Add(cpObj);
+                if (target.TryGetProperty("stockDetails", out var sdObj) && sdObj.ValueKind == JsonValueKind.Object) scopes.Add(sdObj);
+                if (target.TryGetProperty("overview", out var ovObj) && ovObj.ValueKind == JsonValueKind.Object) scopes.Add(ovObj);
+                if (target.TryGetProperty("keyMetrics", out var kmObj) && kmObj.ValueKind == JsonValueKind.Object)
+                {
+                    scopes.Add(kmObj);
+                    if (kmObj.TryGetProperty("ratios", out var rObj) && rObj.ValueKind == JsonValueKind.Object) scopes.Add(rObj);
+                    if (kmObj.TryGetProperty("valuation", out var vObj) && vObj.ValueKind == JsonValueKind.Object) scopes.Add(vObj);
+                    if (kmObj.TryGetProperty("profitability", out var prObj) && prObj.ValueKind == JsonValueKind.Object) scopes.Add(prObj);
+                    if (kmObj.TryGetProperty("mgmtEffectiveness", out var meObj) && meObj.ValueKind == JsonValueKind.Object) scopes.Add(meObj);
+                    if (kmObj.TryGetProperty("financialstrength", out var fsObj) && fsObj.ValueKind == JsonValueKind.Object) scopes.Add(fsObj);
+                    if (kmObj.TryGetProperty("priceandVolume", out var pvObj) && pvObj.ValueKind == JsonValueKind.Object) scopes.Add(pvObj);
+                }
 
-                // Current price
+                if (TryGetPropertyString(scopes, new[] { "companyName", "name", "company_name" }, out var cName))
+                {
+                    dto.CompanyName = cName;
+                }
+
+                if (TryGetPropertyString(scopes, new[] { "industry", "sector", "mgIndustry", "industry_name" }, out var indName))
+                {
+                    dto.Industry = indName;
+                    dto.SectorName = indName;
+                }
+
+                // 1. Current Price
                 if (target.TryGetProperty("currentPrice", out var cpProp) || target.TryGetProperty("current_price", out cpProp))
                 {
                     if (cpProp.ValueKind == JsonValueKind.Object)
@@ -275,24 +227,77 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
                         dto.CurrentPrice = price;
                     }
                 }
-
-                if (!dto.CurrentPrice.HasValue && target.TryGetProperty("price", out var pProp) && TryExtractDecimal(pProp, out var p))
+                if (!dto.CurrentPrice.HasValue && TryGetPropertyDecimal(scopes, new[] { "price", "close", "lastTradedPrice", "last_traded_price", "ltp", "closePrice", "close_price", "regularMarketPrice", "marketPrice" }, out var directPrice))
                 {
-                    dto.CurrentPrice = p;
+                    dto.CurrentPrice = directPrice;
                 }
 
-                if (target.TryGetProperty("yearHigh", out var yhProp) && TryExtractDecimal(yhProp, out var yh))
+                // 2. 52-Week High & Low
+                if (TryGetPropertyDecimal(scopes, new[] { "yearHigh", "yhigh", "week52High", "fiftyTwoWeekHigh", "high52", "52WeekHigh", "52_week_high", "year_high", "week_52_high", "high52Week", "52wHigh", "fiftyTwoWeekHighPrice", "yearHighPrice", "dayHigh", "high" }, out var yh))
                 {
                     dto.YearHigh = yh;
                 }
-
-                if (target.TryGetProperty("yearLow", out var ylProp) && TryExtractDecimal(ylProp, out var yl))
+                if (TryGetPropertyDecimal(scopes, new[] { "yearLow", "ylow", "week52Low", "fiftyTwoWeekLow", "low52", "52WeekLow", "52_week_low", "year_low", "week_52_low", "low52Week", "52wLow", "fiftyTwoWeekLowPrice", "yearLowPrice", "dayLow", "low" }, out var yl))
                 {
                     dto.YearLow = yl;
                 }
 
-                // Peers & Sector PE
-                if (target.TryGetProperty("peerCompanyList", out var peerList) && peerList.ValueKind == JsonValueKind.Array)
+                // 3. Face Value
+                if (TryGetPropertyDecimal(scopes, new[] { "faceValue", "face_value", "FaceValue", "Face_Value", "fv", "FV", "face_val", "faceVal" }, out var fv))
+                {
+                    dto.FaceValue = fv;
+                }
+
+                // 4. Market Cap
+                if (TryGetPropertyDecimal(scopes, new[] { "marketCap", "market_cap", "MarketCap", "Market_Cap", "mcap", "MCap", "totalMarketCap", "marketCapitalization", "MarketCapitalization" }, out var mc))
+                {
+                    dto.MarketCap = mc;
+                }
+
+                // 5. P/E Ratio
+                if (TryGetPropertyDecimal(scopes, new[] { "pPerEBasicExcludingExtraordinaryItemsTTM", "pe", "peRatio", "pe_ratio", "priceToEarnings", "PriceToEarnings", "priceToEarningsValueRatio", "p_e", "ttmPE", "trailingPE", "pe_ttm", "PERatio", "PE" }, out var peVal) && peVal > 0)
+                {
+                    dto.PeRatio = peVal;
+                }
+
+                // 6. ROE
+                if (TryGetPropertyDecimal(scopes, new[] { "roe", "returnOnEquity", "returnOnAverageEquity", "returnOnNetWorth", "returnOnAverageEquityTrailing12Month", "ROE", "ReturnOnEquity", "roe_ttm", "trailingROE", "ronw" }, out var roeVal))
+                {
+                    dto.Roe = roeVal;
+                }
+
+                // 7. ROCE
+                if (TryGetPropertyDecimal(scopes, new[] { "roce", "returnOnCapitalEmployed", "ROCE", "ReturnOnCapitalEmployed", "roce_ttm", "rocePercent", "roce_pct" }, out var roceVal))
+                {
+                    dto.Roce = roceVal;
+                }
+
+                // 8. P/B Ratio
+                if (TryGetPropertyDecimal(scopes, new[] { "pb", "pbRatio", "pb_ratio", "priceToBook", "PriceToBook", "priceToBookValueRatio", "p_b", "pb_ttm", "PBRatio", "PB" }, out var pbVal) && pbVal > 0)
+                {
+                    dto.PbRatio = pbVal;
+                }
+
+                // 9. Dividend Yield
+                if (TryGetPropertyDecimal(scopes, new[] { "currentDividendYieldCommonStockPrimaryIssueLTM", "dividendYield", "dividend_yield", "divYield", "DividendYield", "dividendYieldIndicatedAnnualDividend", "div_yield", "yield" }, out var divVal))
+                {
+                    dto.DividendYield = divVal;
+                }
+
+                // 10. Direct Sector PE check
+                if (TryGetPropertyDecimal(scopes, new[] { "sectorPE", "sectorPe", "industryPE", "industryPe", "sector_pe", "industry_pe", "SectorPE", "IndustryPE", "sectorPeRatio", "industryPeRatio" }, out var secPe) && secPe > 0)
+                {
+                    dto.SectorPe = secPe;
+                }
+
+                // 11. Peers & Sector PE fallback
+                JsonElement peerList = default;
+                bool hasPeers = target.TryGetProperty("peerCompanyList", out peerList) ||
+                                target.TryGetProperty("peerList", out peerList) ||
+                                target.TryGetProperty("peers", out peerList) ||
+                                target.TryGetProperty("peerCompanies", out peerList);
+
+                if (hasPeers && peerList.ValueKind == JsonValueKind.Array)
                 {
                     var peList = new List<decimal>();
                     foreach (var peerEl in peerList.EnumerateArray())
@@ -300,13 +305,22 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
                         var peer = new IndianApiPeerDto();
                         if (peerEl.TryGetProperty("companyName", out var pName)) peer.CompanyName = pName.GetString();
                         if (peerEl.TryGetProperty("price", out var pPrice) && TryExtractDecimal(pPrice, out var pp)) peer.Price = pp;
-                        if (peerEl.TryGetProperty("priceToEarningsValueRatio", out var pPe) && TryExtractDecimal(pPe, out var pe))
+
+                        JsonElement pPe = default;
+                        bool hasPeerPe = peerEl.TryGetProperty("priceToEarningsValueRatio", out pPe) ||
+                                         peerEl.TryGetProperty("priceToEarnings", out pPe) ||
+                                         peerEl.TryGetProperty("peRatio", out pPe) ||
+                                         peerEl.TryGetProperty("pe", out pPe) ||
+                                         peerEl.TryGetProperty("pe_ratio", out pPe) ||
+                                         peerEl.TryGetProperty("p_e", out pPe);
+
+                        if (hasPeerPe && TryExtractDecimal(pPe, out var pe))
                         {
                             peer.PeRatio = pe;
                             if (pe > 0 && pe < 300) peList.Add(pe);
                         }
                         if (peerEl.TryGetProperty("priceToBookValueRatio", out var pPb) && TryExtractDecimal(pPb, out var pb)) peer.PbRatio = pb;
-                        if (peerEl.TryGetProperty("marketCap", out var pMc) && TryExtractDecimal(pMc, out var mc)) peer.MarketCap = mc;
+                        if (peerEl.TryGetProperty("marketCap", out var pMc) && TryExtractDecimal(pMc, out var pMcVal)) peer.MarketCap = pMcVal;
                         if (peerEl.TryGetProperty("returnOnAverageEquityTrailing12Month", out var pRoe) && TryExtractDecimal(pRoe, out var roe)) peer.Roe = roe;
                         if (peerEl.TryGetProperty("dividendYieldIndicatedAnnualDividend", out var pDiv) && TryExtractDecimal(pDiv, out var div)) peer.DividendYield = div;
                         if (peerEl.TryGetProperty("totalSharesOutstanding", out var pShares) && TryExtractDecimal(pShares, out var shares)) peer.TotalShares = shares;
@@ -314,37 +328,84 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
                         dto.Peers.Add(peer);
                     }
 
-                    if (peList.Count > 0)
+                    if (!dto.SectorPe.HasValue && peList.Count > 0)
                     {
                         dto.SectorPe = Math.Round(System.Linq.Enumerable.Average(peList), 2);
                     }
                 }
 
-                // Parse Financials
-                if (target.TryGetProperty("financials", out var finArray) && finArray.ValueKind == JsonValueKind.Array)
+                // 12. Parse Financials (Both Annual and Quarterly)
+                JsonElement finArray = default;
+                bool hasFinancials = target.TryGetProperty("financials", out finArray) || target.TryGetProperty("Financials", out finArray);
+
+                if (hasFinancials && finArray.ValueKind == JsonValueKind.Array)
                 {
+                    Console.WriteLine($"[IndianAPI /stock] Found {finArray.GetArrayLength()} financial periods in payload.");
                     foreach (var finEl in finArray.EnumerateArray())
                     {
-                        var periodType = "Annual";
+                        var rawPeriodType = "Annual";
                         if (finEl.TryGetProperty("Type", out var tProp) && tProp.ValueKind == JsonValueKind.String)
                         {
-                            periodType = tProp.GetString() ?? "Annual";
+                            rawPeriodType = tProp.GetString() ?? "Annual";
+                        }
+                        else if (finEl.TryGetProperty("type", out var tProp2) && tProp2.ValueKind == JsonValueKind.String)
+                        {
+                            rawPeriodType = tProp2.GetString() ?? "Annual";
+                        }
+                        else if (finEl.TryGetProperty("PeriodType", out var ptProp) && ptProp.ValueKind == JsonValueKind.String)
+                        {
+                            rawPeriodType = ptProp.GetString() ?? "Annual";
+                        }
+                        else if (finEl.TryGetProperty("periodType", out var ptProp2) && ptProp2.ValueKind == JsonValueKind.String)
+                        {
+                            rawPeriodType = ptProp2.GetString() ?? "Annual";
                         }
 
-                        if (!periodType.Equals("Annual", StringComparison.OrdinalIgnoreCase))
+                        var isQuarterly = rawPeriodType.IndexOf("quarter", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                          rawPeriodType.IndexOf("interim", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                          rawPeriodType.StartsWith("Q", StringComparison.OrdinalIgnoreCase);
+                        var isAnnual = rawPeriodType.IndexOf("annual", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                       rawPeriodType.IndexOf("year", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                       rawPeriodType.StartsWith("FY", StringComparison.OrdinalIgnoreCase);
+
+                        if (!isAnnual && !isQuarterly)
                         {
                             continue;
                         }
 
                         var period = new IndianApiFinancialPeriodDto
                         {
-                            PeriodType = "annual"
+                            PeriodType = isQuarterly ? "quarterly" : "annual"
                         };
 
-                        if (finEl.TryGetProperty("FiscalYear", out var fyProp) && fyProp.ValueKind == JsonValueKind.String)
+                        JsonElement edProp = default;
+                        bool hasEd = finEl.TryGetProperty("EndDate", out edProp) || finEl.TryGetProperty("endDate", out edProp) || finEl.TryGetProperty("end_date", out edProp) || finEl.TryGetProperty("date", out edProp);
+                        if (hasEd && edProp.ValueKind == JsonValueKind.String)
+                        {
+                            if (DateTime.TryParse(edProp.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var ed))
+                            {
+                                period.PeriodEndDate = ed;
+                                if (isQuarterly)
+                                {
+                                    period.FiscalYear = ed.ToString("MMM yyyy");
+                                }
+                                else if (string.IsNullOrWhiteSpace(period.FiscalYear))
+                                {
+                                    period.FiscalYear = $"FY{ed.Year % 100}";
+                                }
+                            }
+                        }
+
+                        JsonElement fyProp = default;
+                        bool hasFy = finEl.TryGetProperty("FiscalYear", out fyProp) || finEl.TryGetProperty("fiscalYear", out fyProp) || finEl.TryGetProperty("fiscal_year", out fyProp) || finEl.TryGetProperty("period", out fyProp);
+                        if (hasFy && fyProp.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(period.FiscalYear))
                         {
                             var rawFy = fyProp.GetString() ?? "";
-                            if (rawFy.Length == 4 && rawFy.StartsWith("20"))
+                            if (isQuarterly)
+                            {
+                                period.FiscalYear = rawFy;
+                            }
+                            else if (rawFy.Length == 4 && rawFy.StartsWith("20"))
                             {
                                 period.FiscalYear = $"FY{rawFy.Substring(2)}";
                             }
@@ -354,93 +415,120 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
                             }
                         }
 
-                        if (finEl.TryGetProperty("EndDate", out var edProp) && edProp.ValueKind == JsonValueKind.String)
+                        if (string.IsNullOrWhiteSpace(period.FiscalYear) && period.PeriodEndDate.HasValue)
                         {
-                            if (DateTime.TryParse(edProp.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var ed))
-                            {
-                                period.PeriodEndDate = ed;
-                            }
+                            period.FiscalYear = isQuarterly ? period.PeriodEndDate.Value.ToString("MMM yyyy") : $"FY{period.PeriodEndDate.Value.Year % 100}";
                         }
 
-                        if (finEl.TryGetProperty("stockFinancialMap", out var map) && map.ValueKind == JsonValueKind.Object)
+                        JsonElement map = default;
+                        bool hasMap = finEl.TryGetProperty("stockFinancialMap", out map) || finEl.TryGetProperty("financialMap", out map) || finEl.TryGetProperty("StockFinancialMap", out map);
+                        if (hasMap && map.ValueKind == JsonValueKind.Object)
                         {
                             // 1. Cash Flow Statement (CAS)
-                            if (map.TryGetProperty("CAS", out var casArray) && casArray.ValueKind == JsonValueKind.Array)
+                            JsonElement casArray = default;
+                            bool hasCas = map.TryGetProperty("CAS", out casArray) || map.TryGetProperty("cas", out casArray) || map.TryGetProperty("CashFlow", out casArray);
+                            if (hasCas && casArray.ValueKind == JsonValueKind.Array)
                             {
                                 foreach (var item in casArray.EnumerateArray())
                                 {
                                     if (item.TryGetProperty("key", out var k) && item.TryGetProperty("value", out var v))
                                     {
                                         var key = k.GetString();
-                                        if (key == "CashfromOperatingActivities" && TryExtractDecimal(v, out var cfo))
+                                        if ((key == "CashfromOperatingActivities" || key == "CashFromOperations" || key == "OperatingCashFlow") && TryExtractDecimal(v, out var cfo))
                                             period.OperatingCashFlow = cfo;
-                                        else if (key == "CapitalExpenditures" && TryExtractDecimal(v, out var capex))
-                                            period.Capex = Math.Abs(capex); // Normalize to positive amount
-                                        else if (key == "NetChangeinCash" && TryExtractDecimal(v, out var netCash))
+                                        else if ((key == "CapitalExpenditures" || key == "Capex" || key == "CapitalExpenditure") && TryExtractDecimal(v, out var capex))
+                                            period.Capex = Math.Abs(capex);
+                                        else if ((key == "NetChangeinCash" || key == "NetCashFlow" || key == "NetChangeInCashAndCashEquivalents") && TryExtractDecimal(v, out var netCash))
                                             period.NetCashFlow = netCash;
+                                        else if ((key == "Depreciation/Depletion" || key == "Depreciation/Amortization" || key == "Depreciation" || key == "DepreciationAndAmortization" || key == "DepreciationAmortizationTotal" || key == "DepreciationExpense" || (key != null && key.StartsWith("Depreciation", StringComparison.OrdinalIgnoreCase))) && TryExtractDecimal(v, out var depCas))
+                                            period.Depreciation ??= Math.Abs(depCas);
                                     }
                                 }
                             }
 
                             // 2. Income Statement (INC)
-                            if (map.TryGetProperty("INC", out var incArray) && incArray.ValueKind == JsonValueKind.Array)
+                            if ((map.TryGetProperty("INC", out var incArray) || map.TryGetProperty("inc", out incArray) || map.TryGetProperty("IncomeStatement", out incArray)) && incArray.ValueKind == JsonValueKind.Array)
                             {
                                 foreach (var item in incArray.EnumerateArray())
                                 {
                                     if (item.TryGetProperty("key", out var k) && item.TryGetProperty("value", out var v))
                                     {
                                         var key = k.GetString();
-                                          if ((key == "TotalRevenue" || key == "Revenue") && TryExtractDecimal(v, out var rev))
-                                              period.Revenue = rev;
-                                          else if ((key == "OperatingIncome" || key == "OperatingProfit") && TryExtractDecimal(v, out var op))
-                                              period.OperatingProfit = op;
-                                          else if ((key == "NetIncomeBeforeTaxes" || key == "IncomeBeforeTaxes" || key == "EarningsBeforeTaxes") && TryExtractDecimal(v, out var pbt))
-                                              period.ProfitBeforeTax = pbt;
-                                          else if (key == "NetIncome" && TryExtractDecimal(v, out var np))
-                                              period.NetProfit = np;
-                                         else if (key == "NetIncomeAfterTaxes" && TryExtractDecimal(v, out var npat) && !period.NetProfit.HasValue)
-                                             period.NetProfit = npat;
-                                         else if ((key == "DilutedEPSExcludingExtraOrdItems" || key == "DilutedNormalizedEPS" || key == "DilutedEPS") && TryExtractDecimal(v, out var eps))
-                                             period.Eps = eps;
-                                         else if (key == "MinorityInterest" && TryExtractDecimal(v, out var mi))
-                                             period.NetProfitAttributableToMinorityInterest = Math.Abs(mi);
+                                        if ((key == "TotalRevenue" || key == "Revenue" || key == "Sales" || key == "NetSales" || key == "RevenueFromOperations") && TryExtractDecimal(v, out var rev))
+                                            period.Revenue = rev;
+                                        else if ((key == "OperatingIncome" || key == "OperatingProfit" || key == "EBIT") && TryExtractDecimal(v, out var op))
+                                            period.OperatingProfit = op;
+                                        else if ((key == "Depreciation/Amortization" || key == "Depreciation" || key == "Depreciation/Depletion" || key == "DepreciationAndAmortization" || key == "DepreciationAmortizationTotal" || key == "DepreciationExpense" || key == "Depreciation & Amortization" || (key != null && key.StartsWith("Depreciation", StringComparison.OrdinalIgnoreCase))) && TryExtractDecimal(v, out var dep))
+                                            period.Depreciation = Math.Abs(dep);
+                                        else if ((key == "TotalInterestExpense" || key == "InterestExpense" || key == "Interest" || key == "FinanceCosts") && TryExtractDecimal(v, out var interest))
+                                            period.Interest = Math.Abs(interest);
+                                        else if ((key == "NonOperatingIncome" || key == "OtherIncome" || key == "TotalOtherIncomeExpenseNet") && TryExtractDecimal(v, out var oi))
+                                            period.OtherIncome = oi;
+                                        else if ((key == "NetIncomeBeforeTaxes" || key == "IncomeBeforeTaxes" || key == "EarningsBeforeTaxes" || key == "ProfitBeforeTax" || key == "PBT") && TryExtractDecimal(v, out var pbt))
+                                            period.ProfitBeforeTax = pbt;
+                                        else if ((key == "ProvisionforIncomeTaxes" || key == "IncomeTaxExpense" || key == "Tax" || key == "Taxes") && TryExtractDecimal(v, out var tax))
+                                            period.Tax = Math.Abs(tax);
+                                        else if ((key == "NetIncome" || key == "NetProfit" || key == "PAT") && TryExtractDecimal(v, out var np))
+                                            period.NetProfit = np;
+                                        else if (key == "NetIncomeAfterTaxes" && TryExtractDecimal(v, out var npat) && !period.NetProfit.HasValue)
+                                            period.NetProfit = npat;
+                                        else if ((key == "DilutedEPSExcludingExtraOrdItems" || key == "DilutedNormalizedEPS" || key == "DilutedEPS" || key == "BasicEPS" || key == "EPS" || key == "Eps") && TryExtractDecimal(v, out var eps))
+                                            period.Eps = eps;
+                                        else if (key == "MinorityInterest" && TryExtractDecimal(v, out var mi))
+                                            period.NetProfitAttributableToMinorityInterest = Math.Abs(mi);
                                     }
+                                }
+
+                                if (period.Revenue.HasValue && period.OperatingProfit.HasValue)
+                                {
+                                    period.Expenses = period.Revenue.Value - period.OperatingProfit.Value;
+                                    if (period.Revenue.Value > 0)
+                                    {
+                                        period.OperatingProfitMargin = Math.Round((period.OperatingProfit.Value / period.Revenue.Value) * 100m, 2);
+                                    }
+                                }
+
+                                if (period.Tax.HasValue && period.ProfitBeforeTax.HasValue && period.ProfitBeforeTax.Value > 0)
+                                {
+                                    period.TaxPercentage = Math.Round((period.Tax.Value / period.ProfitBeforeTax.Value) * 100m, 2);
                                 }
                             }
 
                             // 3. Balance Sheet (BAL)
-                            if (map.TryGetProperty("BAL", out var balArray) && balArray.ValueKind == JsonValueKind.Array)
+                            if ((map.TryGetProperty("BAL", out var balArray) || map.TryGetProperty("bal", out balArray) || map.TryGetProperty("BalanceSheet", out balArray)) && balArray.ValueKind == JsonValueKind.Array)
                             {
                                 foreach (var item in balArray.EnumerateArray())
                                 {
                                     if (item.TryGetProperty("key", out var k) && item.TryGetProperty("value", out var v))
                                     {
                                         var key = k.GetString();
-                                        if (key == "TotalAssets" && TryExtractDecimal(v, out var ta))
+                                        if ((key == "TotalAssets" || key == "TotalAsset") && TryExtractDecimal(v, out var ta))
                                             period.TotalAssets = ta;
-                                        else if (key == "TotalLiabilities" && TryExtractDecimal(v, out var tl))
+                                        else if ((key == "TotalLiabilities" || key == "TotalLiability") && TryExtractDecimal(v, out var tl))
                                             period.TotalLiabilities = tl;
-                                        else if (key == "TotalCurrentLiabilities" && TryExtractDecimal(v, out var tcl))
+                                        else if ((key == "TotalCurrentLiabilities" || key == "CurrentLiabilities") && TryExtractDecimal(v, out var tcl))
                                             period.TotalCurrentLiabilities = tcl;
-                                        else if ((key == "TotalDebt" || key == "TotalLongTermDebt") && TryExtractDecimal(v, out var td))
+                                        else if ((key == "TotalDebt" || key == "TotalLongTermDebt" || key == "Borrowings" || key == "Debt") && TryExtractDecimal(v, out var td))
                                             period.TotalDebt = td;
-                                        else if (key == "TotalEquity" && TryExtractDecimal(v, out var te))
+                                        else if ((key == "TotalEquity" || key == "ShareholdersEquity" || key == "NetWorth") && TryExtractDecimal(v, out var te))
                                             period.TotalEquity = te;
-                                        else if (key == "OtherEquityTotal" && TryExtractDecimal(v, out var oe))
+                                        else if ((key == "OtherEquityTotal" || key == "OtherEquity" || key == "ReservesAndSurplus" || key == "Reserves") && TryExtractDecimal(v, out var oe))
                                             period.OtherEquity = oe;
-                                        else if (key == "CommonStockTotal" && TryExtractDecimal(v, out var cs))
+                                        else if ((key == "CommonStockTotal" || key == "EquityCapital" || key == "ShareCapital" || key == "CommonStock") && TryExtractDecimal(v, out var cs))
                                             period.EquityCapital = cs;
-                                        else if (key == "TangibleBookValueperShareCommonEq" && TryExtractDecimal(v, out var tbv))
+                                        else if ((key == "TangibleBookValueperShareCommonEq" || key == "BookValuePerShare" || key == "BookValue") && TryExtractDecimal(v, out var tbv))
                                             period.BookValuePerShare = tbv;
-                                        else if (key == "TotalCommonSharesOutstanding" && TryExtractDecimal(v, out var tcso))
+                                        else if ((key == "TotalCommonSharesOutstanding" || key == "TotalShares" || key == "SharesOutstanding") && TryExtractDecimal(v, out var tcso))
                                             period.TotalShares = tcso;
                                     }
                                 }
 
-                                // Prefer Consolidated Book Value Per Share = TotalEquity / TotalShares if available
                                 if (period.TotalEquity.HasValue && period.TotalShares.HasValue && period.TotalShares.Value > 0)
                                 {
-                                    period.BookValuePerShare = Math.Round(period.TotalEquity.Value / period.TotalShares.Value, 2);
+                                    var shares = period.TotalShares.Value;
+                                    period.BookValuePerShare = shares > 10000000
+                                        ? Math.Round((period.TotalEquity.Value * 10000000m) / shares, 2)
+                                        : Math.Round(period.TotalEquity.Value / shares, 2);
                                 }
                             }
                         }
@@ -455,7 +543,7 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
                 decimal? directBvQuarter = null;
                 decimal? directBvFiscalYear = null;
 
-                // Parse keyMetrics for TTM EPS, Consolidated Book Value & Valuation multiples
+                // 13. Parse keyMetrics for TTM EPS & Consolidated Book Value
                 if (target.TryGetProperty("keyMetrics", out var kmProp) && kmProp.ValueKind == JsonValueKind.Object)
                 {
                     if (kmProp.TryGetProperty("persharedata", out var psdArray) && psdArray.ValueKind == JsonValueKind.Array)
@@ -467,7 +555,8 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
                                 var key = k.GetString();
                                 if ((key == "eEPSExcludingExtraordinaryIitemsTrailing12onth" ||
                                      key == "ePSIncludingExtraOrdinaryItemsTrailing12Month" ||
-                                     key == "ePSBasicExcludingExtraordinaryItemsItrailing12Month") &&
+                                     key == "ePSBasicExcludingExtraordinaryItemsItrailing12Month" ||
+                                     key == "ttmEps" || key == "epsTtm") &&
                                     TryExtractDecimal(v, out var ttmEps) && ttmEps > 0)
                                 {
                                     dto.TtmEps = ttmEps;
@@ -502,85 +591,115 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
                     }
                 }
 
-                // Sort financials descending by period end date or fiscal year
+                // Sort financials descending by period end date
                 dto.Financials = System.Linq.Enumerable.ToList(
                     System.Linq.Enumerable.OrderByDescending(dto.Financials, f => f.PeriodEndDate ?? DateTime.MinValue));
 
-                // Derive top level valuation ratios from latest period / TTM metrics
-                var latest = System.Linq.Enumerable.FirstOrDefault(dto.Financials);
-                var effectiveEps = dto.TtmEps ?? latest?.Eps;
+                // Find latest Annual financial statement (fallback to latest period)
+                var latestAnnual = System.Linq.Enumerable.FirstOrDefault(dto.Financials, f => f.PeriodType == "annual")
+                                   ?? System.Linq.Enumerable.FirstOrDefault(dto.Financials);
 
-                dto.BookValue = directBvQuarter ?? directBvFiscalYear ?? latest?.BookValuePerShare;
-                if (latest != null && dto.BookValue.HasValue)
+                // 14. Book Value
+                if (!dto.BookValue.HasValue)
                 {
-                    latest.BookValuePerShare = dto.BookValue.Value;
+                    dto.BookValue = directBvQuarter ?? directBvFiscalYear ?? latestAnnual?.BookValuePerShare;
+                }
+                if (!dto.BookValue.HasValue && latestAnnual?.TotalEquity.HasValue == true)
+                {
+                    if (latestAnnual.TotalShares.HasValue && latestAnnual.TotalShares.Value > 0)
+                    {
+                        var sh = latestAnnual.TotalShares.Value;
+                        dto.BookValue = sh > 10000000 ? Math.Round((latestAnnual.TotalEquity.Value * 10000000m) / sh, 2) : Math.Round(latestAnnual.TotalEquity.Value / sh, 2);
+                    }
+                    else if (latestAnnual.EquityCapital.HasValue && dto.FaceValue.HasValue && dto.FaceValue.Value > 0)
+                    {
+                        var shCr = latestAnnual.EquityCapital.Value / dto.FaceValue.Value;
+                        if (shCr > 0) dto.BookValue = Math.Round(latestAnnual.TotalEquity.Value / shCr, 2);
+                    }
+                }
+                if (latestAnnual != null && dto.BookValue.HasValue && !latestAnnual.BookValuePerShare.HasValue)
+                {
+                    latestAnnual.BookValuePerShare = dto.BookValue.Value;
                 }
 
-                if (dto.CurrentPrice.HasValue && effectiveEps.HasValue && effectiveEps.Value > 0)
+                // 15. Face Value (Dynamic calculation from EquityCapital and TotalShares if missing)
+                if (!dto.FaceValue.HasValue)
                 {
-                    // Formula: P/E = Current Share Market Price / TTM EPS
-                    dto.PeRatio = Math.Round(dto.CurrentPrice.Value / effectiveEps.Value, 2);
+                    var finWithEq = System.Linq.Enumerable.FirstOrDefault(dto.Financials, f => f.EquityCapital.HasValue && f.TotalShares.HasValue);
+                    if (finWithEq != null && finWithEq.EquityCapital.HasValue && finWithEq.TotalShares.HasValue && finWithEq.TotalShares.Value > 0)
+                    {
+                        var eq = finWithEq.EquityCapital.Value;
+                        var sh = finWithEq.TotalShares.Value;
+                        dto.FaceValue = sh > 10000000 ? Math.Round((eq * 10000000m) / sh, 2) : Math.Round(eq / sh, 2);
+                    }
+                    else if (latestAnnual?.EquityCapital.HasValue == true && dto.CurrentPrice.HasValue && dto.MarketCap.HasValue && dto.MarketCap.Value > 0)
+                    {
+                        // Formula: FaceValue = (EquityCapital * CurrentPrice) / MarketCap
+                        dto.FaceValue = Math.Round((latestAnnual.EquityCapital.Value * dto.CurrentPrice.Value) / dto.MarketCap.Value, 0);
+                    }
                 }
 
-                var effectiveBookValue = dto.BookValue ?? latest?.BookValuePerShare;
-                if (dto.CurrentPrice.HasValue && effectiveBookValue.HasValue && effectiveBookValue.Value > 0)
+                // 16. Market Cap (Dynamic calculation from TotalShares & CurrentPrice or EquityCapital/FaceValue if missing)
+                if (!dto.MarketCap.HasValue && dto.CurrentPrice.HasValue && dto.CurrentPrice.Value > 0)
                 {
-                    // Formula: P/B = Current Share Market Price / Book Value
-                    dto.PbRatio = Math.Round(dto.CurrentPrice.Value / effectiveBookValue.Value, 2);
+                    if (latestAnnual?.TotalShares.HasValue == true && latestAnnual.TotalShares.Value > 0)
+                    {
+                        var sh = latestAnnual.TotalShares.Value;
+                        dto.MarketCap = sh > 10000000 ? Math.Round((sh * dto.CurrentPrice.Value) / 10000000m, 2) : Math.Round(sh * dto.CurrentPrice.Value, 2);
+                    }
+                    else if (latestAnnual?.EquityCapital.HasValue == true && dto.FaceValue.HasValue && dto.FaceValue.Value > 0)
+                    {
+                        var sharesCr = latestAnnual.EquityCapital.Value / dto.FaceValue.Value;
+                        dto.MarketCap = Math.Round(sharesCr * dto.CurrentPrice.Value, 2);
+                    }
                 }
 
-                if (latest != null)
+                // 17. P/E Ratio (Dynamic calculation from Current Price / EPS or Market Cap / Net Profit if missing)
+                if (!dto.PeRatio.HasValue && dto.CurrentPrice.HasValue && dto.CurrentPrice.Value > 0)
                 {
-                    if (latest.NetProfit.HasValue && latest.TotalEquity.HasValue && latest.TotalEquity.Value > 0)
+                    var effectiveEps = dto.TtmEps ?? latestAnnual?.Eps;
+                    if (effectiveEps.HasValue && effectiveEps.Value > 0)
                     {
-                        dto.Roe = Math.Round((latest.NetProfit.Value / latest.TotalEquity.Value) * 100, 2);
+                        dto.PeRatio = Math.Round(dto.CurrentPrice.Value / effectiveEps.Value, 2);
+                    }
+                    else if (dto.MarketCap.HasValue && latestAnnual?.NetProfit.HasValue == true && latestAnnual.NetProfit.Value > 0)
+                    {
+                        dto.PeRatio = Math.Round(dto.MarketCap.Value / latestAnnual.NetProfit.Value, 2);
+                    }
+                }
+
+                // 18. P/B Ratio (Dynamic calculation from Current Price / Book Value if missing)
+                if (!dto.PbRatio.HasValue && dto.CurrentPrice.HasValue && dto.CurrentPrice.Value > 0 && dto.BookValue.HasValue && dto.BookValue.Value > 0)
+                {
+                    dto.PbRatio = Math.Round(dto.CurrentPrice.Value / dto.BookValue.Value, 2);
+                }
+
+                // 19. ROE (Dynamic calculation: (Latest Net Profit / Total Equity) * 100 if missing)
+                if (!dto.Roe.HasValue && latestAnnual?.NetProfit.HasValue == true && latestAnnual.TotalEquity.HasValue && latestAnnual.TotalEquity.Value > 0)
+                {
+                    dto.Roe = Math.Round((latestAnnual.NetProfit.Value / latestAnnual.TotalEquity.Value) * 100m, 2);
+                }
+
+                // 20. ROCE (Dynamic calculation: (EBIT / Capital Employed) * 100 if missing)
+                if (!dto.Roce.HasValue && latestAnnual != null)
+                {
+                    decimal? ebit = latestAnnual.ProfitBeforeTax.HasValue
+                        ? (latestAnnual.ProfitBeforeTax.Value + (latestAnnual.Interest ?? 0))
+                        : (latestAnnual.OperatingProfit.HasValue ? latestAnnual.OperatingProfit.Value + (latestAnnual.OtherIncome ?? 0) : null);
+
+                    decimal? capitalEmployed = null;
+                    if (latestAnnual.TotalEquity.HasValue && latestAnnual.TotalEquity.Value > 0)
+                    {
+                        capitalEmployed = latestAnnual.TotalEquity.Value + (latestAnnual.TotalDebt ?? 0);
+                    }
+                    else if (latestAnnual.TotalAssets.HasValue && latestAnnual.TotalCurrentLiabilities.HasValue)
+                    {
+                        capitalEmployed = latestAnnual.TotalAssets.Value - latestAnnual.TotalCurrentLiabilities.Value;
                     }
 
-                    var ebit = latest.ProfitBeforeTax ?? latest.OperatingProfit;
-                    if (ebit.HasValue && ebit.Value > 0)
+                    if (ebit.HasValue && capitalEmployed.HasValue && capitalEmployed.Value > 0)
                     {
-                        var priorPeriod = dto.Financials.Count > 1 ? dto.Financials[1] : null;
-
-                        decimal? currentCe = null;
-                        if (latest.TotalEquity.HasValue && (latest.TotalEquity.Value + (latest.TotalDebt ?? 0)) > 0)
-                        {
-                            currentCe = latest.TotalEquity.Value + (latest.TotalDebt ?? 0);
-                        }
-                        else if (latest.TotalAssets.HasValue && latest.TotalCurrentLiabilities.HasValue && (latest.TotalAssets.Value - latest.TotalCurrentLiabilities.Value) > 0)
-                        {
-                            currentCe = latest.TotalAssets.Value - latest.TotalCurrentLiabilities.Value;
-                        }
-
-                        decimal? priorCe = null;
-                        if (priorPeriod != null)
-                        {
-                            if (priorPeriod.TotalEquity.HasValue && (priorPeriod.TotalEquity.Value + (priorPeriod.TotalDebt ?? 0)) > 0)
-                            {
-                                priorCe = priorPeriod.TotalEquity.Value + (priorPeriod.TotalDebt ?? 0);
-                            }
-                            else if (priorPeriod.TotalAssets.HasValue && priorPeriod.TotalCurrentLiabilities.HasValue && (priorPeriod.TotalAssets.Value - priorPeriod.TotalCurrentLiabilities.Value) > 0)
-                            {
-                                priorCe = priorPeriod.TotalAssets.Value - priorPeriod.TotalCurrentLiabilities.Value;
-                            }
-                        }
-
-                        // Use Opening Capital Employed (or Closing CE if single period) for standard ROCE
-                        var capitalEmployed = priorCe ?? currentCe;
-
-                        if (capitalEmployed.HasValue && capitalEmployed.Value > 0)
-                        {
-                            // Formula: ROCE = (EBIT / Capital Employed) * 100
-                            dto.Roce = Math.Round((ebit.Value / capitalEmployed.Value) * 100, 2);
-                        }
-                    }
-
-                    if (dto.CurrentPrice.HasValue && latest.TotalShares.HasValue && latest.TotalShares.Value > 0)
-                    {
-                        dto.MarketCap = Math.Round(dto.CurrentPrice.Value * latest.TotalShares.Value, 2);
-                    }
-                    if (latest.EquityCapital.HasValue && latest.TotalShares.HasValue && latest.TotalShares.Value > 0)
-                    {
-                        dto.FaceValue = Math.Round(latest.EquityCapital.Value / latest.TotalShares.Value, 2);
+                        dto.Roce = Math.Round((ebit.Value / capitalEmployed.Value) * 100m, 2);
                     }
                 }
 
@@ -591,6 +710,46 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
                 _logger.LogError(ex, "Error fetching stock financials and overview from IndianAPI for {Symbol}.", cleanStock);
                 return null;
             }
+        }
+
+        private static bool TryGetPropertyString(IEnumerable<JsonElement> scopes, string[] keys, out string? value)
+        {
+            value = null;
+            foreach (var scope in scopes)
+            {
+                if (scope.ValueKind != JsonValueKind.Object) continue;
+                foreach (var key in keys)
+                {
+                    if (scope.TryGetProperty(key, out var prop) && prop.ValueKind == JsonValueKind.String)
+                    {
+                        var str = prop.GetString();
+                        if (!string.IsNullOrWhiteSpace(str))
+                        {
+                            value = str;
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        private static bool TryGetPropertyDecimal(IEnumerable<JsonElement> scopes, string[] keys, out decimal value)
+        {
+            value = 0;
+            foreach (var scope in scopes)
+            {
+                if (scope.ValueKind != JsonValueKind.Object) continue;
+                foreach (var key in keys)
+                {
+                    if (scope.TryGetProperty(key, out var prop) && TryExtractDecimal(prop, out var dec))
+                    {
+                        value = dec;
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         private static bool TryExtractDecimal(JsonElement el, out decimal val)
