@@ -1,96 +1,90 @@
 <div class="chart-container">
   <!-- State 1: Loading Skeleton -->
-  @if (loadingState === 'loading') {
-    <div class="skeleton-wrapper">
-      <div class="skeleton-header shimmer"></div>
-      <div class="skeleton-chart shimmer"></div>
-    </div>
+  @if (loadingState === 'loading' && !priceHistory) {
+  <div class="skeleton-wrapper">
+    <div class="skeleton-header shimmer"></div>
+    <div class="skeleton-chart shimmer"></div>
+  </div>
   }
 
   <!-- State 2: Error State -->
   @if (loadingState === 'error') {
-    <div class="state-card error-state">
-      <div class="state-icon-wrapper error-icon-bg">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="state-svg error-color">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="12" y1="8" x2="12" y2="12"></line>
-          <line x1="12" y1="16" x2="12.01" y2="16"></line>
-        </svg>
-      </div>
-      <h3 class="state-title">Unable to Load Price History</h3>
-      <p class="state-description">{{ errorMessage || 'An error occurred while fetching price history.' }}</p>
-      <button type="button" class="action-btn" (click)="onRefreshClick()">
-        Retry Sync
-      </button>
+  <div class="state-card error-state">
+    <div class="state-icon-wrapper error-icon-bg">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="state-svg error-color">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="8" x2="12" y2="12"></line>
+        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+      </svg>
     </div>
+    <h3 class="state-title">Unable to Load Price History</h3>
+    <p class="state-description">{{ errorMessage || 'An error occurred while fetching price history.' }}</p>
+    <button type="button" class="action-btn" (click)="onRefreshClick()">
+      Retry Sync
+    </button>
+  </div>
   }
 
   <!-- State 3: Empty State -->
   @if (loadingState === 'empty') {
-    <div class="state-card empty-state">
-      <div class="state-icon-wrapper">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="state-svg">
-          <path d="M21 21H3v-2h18v2zm-2-4H5V5h14v12zm-2-2V7H7v10h10zm-2-2H9v-2h6v2z"></path>
-        </svg>
-      </div>
-      <h3 class="state-title">No Price Data Available</h3>
-      <p class="state-description">
-        No historical prices found for this stock.
-      </p>
-      <button type="button" class="action-btn" (click)="onRefreshClick()">
-        Check for Updates
-      </button>
+  <div class="state-card empty-state">
+    <div class="state-icon-wrapper">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="state-svg">
+        <path d="M21 21H3v-2h18v2zm-2-4H5V5h14v12zm-2-2V7H7v10h10zm-2-2H9v-2h6v2z"></path>
+      </svg>
     </div>
+    <h3 class="state-title">No Price Data Available</h3>
+    <p class="state-description">
+      No historical prices found for this stock.
+    </p>
+    <button type="button" class="action-btn" (click)="onRefreshClick()">
+      Check for Updates
+    </button>
+  </div>
   }
 
-  <!-- State 4: Success Content -->
-  @if (loadingState === 'success' && priceHistory) {
-    <!-- Metadata & Period Header Bar -->
-    <div class="pattern-header-card">
-      <div class="header-left">
-        <div class="period-badge-group">
-          <span class="period-pill active">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pill-icon">
-              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-            </svg>
-            Price & Volume History
-          </span>
-        </div>
-
-        <div class="meta-details">
-          <span class="meta-item">
-            <strong>Source:</strong> {{ priceHistory.source }}
-          </span>
-          <span class="meta-item">
-            <strong>Last synced:</strong> {{ priceHistory.lastSyncedAt | timeAgo }}
-          </span>
-        </div>
-      </div>
-
-      <div class="header-right">
-        <button 
-          class="sync-btn" 
-          (click)="onRefreshClick()"
-          title="Force refresh data from source"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="sync-icon">
-            <path d="M21 2v6h-6"></path>
-            <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
-            <path d="M3 22v-6h6"></path>
-            <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+  <!-- State 4: Success Content (Keeps chart alive during period changes) -->
+  @if (priceHistory && loadingState !== 'error' && loadingState !== 'empty') {
+  <!-- Metadata & Period Header Bar -->
+  <div class="pattern-header-card">
+    <div class="header-left">
+      <div class="period-badge-group">
+        <span class="period-pill active">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pill-icon">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
           </svg>
-          Sync
-        </button>
+          Price, Volume & DMAs
+        </span>
+      </div>
+
+      <div class="meta-details">
+        <span class="meta-item">
+          <strong>Source:</strong> {{ priceHistory.source }}
+        </span>
+        <span class="meta-item">
+          <strong>Last synced:</strong> {{ priceHistory.lastSyncedAt | timeAgo }}
+        </span>
       </div>
     </div>
 
-    <!-- Chart Container -->
-    <div class="chart-wrapper">
-      <highcharts-chart 
-        [options]="chartOptions"
-        [(update)]="updateFlag"
-        style="width: 100%; height: 500px; display: block;"
-      ></highcharts-chart>
+    <div class="header-right">
+      <button class="sync-btn" (click)="onRefreshClick()" title="Force refresh data from source">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="sync-icon">
+          <path d="M21 2v6h-6"></path>
+          <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+          <path d="M3 22v-6h6"></path>
+          <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+        </svg>
+        Sync
+      </button>
     </div>
+  </div>
+
+  <!-- Chart Container -->
+  <div class="chart-wrapper">
+    <highcharts-chart [options]="chartOptions" [(update)]="updateFlag"
+      [oneToOne]="true" (chartInstance)="chart = $event"
+      style="width: 100%; height: 500px; display: block;"></highcharts-chart>
+  </div>
   }
 </div>

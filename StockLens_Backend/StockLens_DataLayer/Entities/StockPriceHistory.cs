@@ -14,6 +14,10 @@ namespace StockLens_DataLayer.Entities
         public decimal Low { get; set; }
         public decimal Close { get; set; }
         public long Volume { get; set; }
+        
+        public decimal? Dma50 { get; set; }
+        public decimal? Dma200 { get; set; }
+        
         public string Source { get; set; } = "IndianAPI";
 
         public DateTime LastSyncedAt { get; set; } = DateTime.UtcNow;

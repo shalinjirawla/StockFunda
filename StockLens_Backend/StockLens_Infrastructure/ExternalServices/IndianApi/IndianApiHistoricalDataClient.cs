@@ -35,7 +35,7 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
             }
         }
 
-        public async Task<List<IndianApiPriceRecord>> GetHistoricalPricesAsync(string cleanTicker, string period = "5yr", string? exchange = null, CancellationToken cancellationToken = default)
+        public async Task<List<IndianApiPriceRecord>> GetHistoricalPricesAsync(string cleanTicker, string period = "5yr", string? exchange = null, string filter = "price", CancellationToken cancellationToken = default)
         {
             var allRecords = new List<IndianApiPriceRecord>();
             
@@ -44,7 +44,7 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
             // Default to 5yr if an invalid or empty period is passed
             if (string.IsNullOrWhiteSpace(period)) period = "5yr";
             
-            var endpoint = $"/historical_data?stock_name={Uri.EscapeDataString(pureTicker)}&period={Uri.EscapeDataString(period)}&filter=price";
+            var endpoint = $"/historical_data?stock_name={Uri.EscapeDataString(pureTicker)}&period={Uri.EscapeDataString(period)}&filter={Uri.EscapeDataString(filter)}";
 
             try
             {
@@ -117,6 +117,28 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
                                         else if (item[1].ValueKind == JsonValueKind.String && long.TryParse(item[1].GetString(), out var vol))
                                         {
                                             record.Volume = vol;
+                                        }
+                                    }
+                                    else if (metric == "DMA50")
+                                    {
+                                        if (item[1].ValueKind == JsonValueKind.String && decimal.TryParse(item[1].GetString(), out var dma50))
+                                        {
+                                            record.Dma50 = dma50;
+                                        }
+                                        else if (item[1].ValueKind == JsonValueKind.Number)
+                                        {
+                                            record.Dma50 = item[1].GetDecimal();
+                                        }
+                                    }
+                                    else if (metric == "DMA200")
+                                    {
+                                        if (item[1].ValueKind == JsonValueKind.String && decimal.TryParse(item[1].GetString(), out var dma200))
+                                        {
+                                            record.Dma200 = dma200;
+                                        }
+                                        else if (item[1].ValueKind == JsonValueKind.Number)
+                                        {
+                                            record.Dma200 = item[1].GetDecimal();
                                         }
                                     }
                                 }

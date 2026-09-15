@@ -40,7 +40,7 @@ namespace StockLens_BusinessLayer.Services
             _logger = logger;
         }
 
-        public async Task<PriceHistoryResponseDto> GetPriceHistoryBySymbolAsync(string symbol, string? exchange = null, string period = "5yr", bool forceRefresh = false, CancellationToken cancellationToken = default)
+        public async Task<PriceHistoryResponseDto> GetPriceHistoryBySymbolAsync(string symbol, string? exchange = null, string period = "5yr", bool forceRefresh = false, string filter = "price", CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
             {
@@ -52,10 +52,10 @@ namespace StockLens_BusinessLayer.Services
 
             var stock = await _stockRepository.GetOrCreateStockAsync(cleanSymbol, cleanExchange, cancellationToken: cancellationToken);
 
-            return await ProcessPriceHistoryAsync(stock, period, forceRefresh, cancellationToken);
+            return await ProcessPriceHistoryAsync(stock, period, forceRefresh, filter, cancellationToken);
         }
 
-        public async Task<PriceHistoryResponseDto> GetPriceHistoryByStockIdAsync(int stockId, string period = "5yr", bool forceRefresh = false, CancellationToken cancellationToken = default)
+        public async Task<PriceHistoryResponseDto> GetPriceHistoryByStockIdAsync(int stockId, string period = "5yr", bool forceRefresh = false, string filter = "price", CancellationToken cancellationToken = default)
         {
             var stock = await _stockRepository.GetByIdAsync(stockId);
             if (stock == null)
@@ -63,7 +63,7 @@ namespace StockLens_BusinessLayer.Services
                 return new PriceHistoryResponseDto { ErrorMessage = "Stock not found." };
             }
 
-            return await ProcessPriceHistoryAsync(stock, period, forceRefresh, cancellationToken);
+            return await ProcessPriceHistoryAsync(stock, period, forceRefresh, filter, cancellationToken);
         }
 
         private void ParsePeriod(string period, out DateTime fromDate, out int expectedDays)
@@ -108,7 +108,7 @@ namespace StockLens_BusinessLayer.Services
             }
         }
 
-        private async Task<PriceHistoryResponseDto> ProcessPriceHistoryAsync(Stock stock, string period, bool forceRefresh, CancellationToken cancellationToken)
+        private async Task<PriceHistoryResponseDto> ProcessPriceHistoryAsync(Stock stock, string period, bool forceRefresh, string filter, CancellationToken cancellationToken)
         {
             var result = new PriceHistoryResponseDto { Symbol = stock.Symbol };
 
@@ -152,7 +152,7 @@ namespace StockLens_BusinessLayer.Services
                     var source = "IndianAPI";
                     try
                     {
-                        rawPrices = await _apiClient.GetHistoricalPricesAsync(stock.Symbol, period: "5yr", exchange: stock.Exchange, cancellationToken: cancellationToken);
+                        rawPrices = await _apiClient.GetHistoricalPricesAsync(stock.Symbol, period: "5yr", exchange: stock.Exchange, filter: filter, cancellationToken: cancellationToken);
                     }
                     catch (Exception apiEx)
                     {
@@ -187,6 +187,8 @@ namespace StockLens_BusinessLayer.Services
                                 Low = r.Low ?? 0,
                                 Close = r.Close ?? 0,
                                 Volume = r.Volume ?? 0,
+                                Dma50 = r.Dma50,
+                                Dma200 = r.Dma200,
                                 Source = source,
                                 LastSyncedAt = DateTime.UtcNow,
                                 CreatedAt = DateTime.UtcNow,
@@ -227,17 +229,21 @@ namespace StockLens_BusinessLayer.Services
             foreach (var record in sortedDbRecords)
             {
                 result.Dates.Add(record.Date.ToString("yyyy-MM-dd"));
-                result.OpenPrices.Add(record.Open);
-                result.HighPrices.Add(record.High);
-                result.LowPrices.Add(record.Low);
                 result.ClosePrices.Add(record.Close);
                 result.Volumes.Add(record.Volume);
+                result.Dma50.Add(record.Dma50);
+                result.Dma200.Add(record.Dma200);
             }
 
             var latestRecord = sortedDbRecords.LastOrDefault();
             if (latestRecord != null)
             {
-                result.LastSyncedAt = latestRecord.LastSyncedAt.ToString("O");
+                var dt = latestRecord.LastSyncedAt;
+                if (dt.Kind == DateTimeKind.Unspecified)
+                {
+                    dt = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+                }
+                result.LastSyncedAt = dt.ToString("O");
                 result.Source = latestRecord.Source;
             }
 

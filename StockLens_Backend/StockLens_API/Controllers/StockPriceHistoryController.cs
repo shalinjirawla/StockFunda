@@ -28,6 +28,7 @@ namespace StockLens_API.Controllers
             [FromQuery] string? exchange = null, 
             [FromQuery] string period = "5yr",
             [FromQuery] bool refresh = false,
+            [FromQuery] string filter = "price",
             CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
@@ -37,7 +38,7 @@ namespace StockLens_API.Controllers
 
             try
             {
-                var result = await _priceHistoryService.GetPriceHistoryBySymbolAsync(symbol, exchange, period, refresh, cancellationToken);
+                var result = await _priceHistoryService.GetPriceHistoryBySymbolAsync(symbol, exchange, period, refresh, filter, cancellationToken);
                 return Ok(result);
 
             }
@@ -72,11 +73,12 @@ namespace StockLens_API.Controllers
             int stockId, 
             [FromQuery] string period = "5yr",
             [FromQuery] bool refresh = false,
+            [FromQuery] string filter = "price",
             CancellationToken cancellationToken = default)
         {
             try
             {
-                var result = await _priceHistoryService.GetPriceHistoryByStockIdAsync(stockId, period, refresh, cancellationToken);
+                var result = await _priceHistoryService.GetPriceHistoryByStockIdAsync(stockId, period, refresh, filter, cancellationToken);
                 return Ok(result);
             }
             catch (System.Collections.Generic.KeyNotFoundException ex)

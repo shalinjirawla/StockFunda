@@ -10,6 +10,9 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi.Models
         public decimal? Low { get; set; }
         public decimal? Close { get; set; }
         public long? Volume { get; set; }
+        
+        public decimal? Dma50 { get; set; }
+        public decimal? Dma200 { get; set; }
 
         public DateTime? ResolvedDate
         {

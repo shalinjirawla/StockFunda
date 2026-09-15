@@ -14,10 +14,8 @@ namespace StockLens_BusinessLayer.DTOs
         public List<decimal> ClosePrices { get; set; } = new();
         public List<long> Volumes { get; set; } = new();
 
-        // Additional data if High-Low-Open is needed
-        public List<decimal> OpenPrices { get; set; } = new();
-        public List<decimal> HighPrices { get; set; } = new();
-        public List<decimal> LowPrices { get; set; } = new();
+        public List<decimal?> Dma50 { get; set; } = new();
+        public List<decimal?> Dma200 { get; set; } = new();
         
         public string Source { get; set; } = "IndianAPI";
         public string LastSyncedAt { get; set; } = string.Empty;
