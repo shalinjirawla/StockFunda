@@ -32,45 +32,43 @@ builder.Services.Configure<IndianApiSettings>(builder.Configuration.GetSection(I
 builder.Services.AddHttpClient<IIndianApiNewsClient, IndianApiNewsClient>((serviceProvider, client) =>
 {
     var config = builder.Configuration.GetSection(IndianApiSettings.SectionName).Get<IndianApiSettings>() ?? new IndianApiSettings();
-    client.BaseAddress = new Uri(config.BaseUrl.TrimEnd('/') + "/");
-    client.Timeout = TimeSpan.FromSeconds(config.TimeoutSeconds > 0 ? config.TimeoutSeconds : 15);
+    var baseUrl = !string.IsNullOrWhiteSpace(config.BaseUrl) ? config.BaseUrl.TrimEnd('/') + "/" : "https://stock.indianapi.in/";
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromSeconds(config.TimeoutSeconds > 0 ? config.TimeoutSeconds : 20);
     client.DefaultRequestHeaders.Add("Accept", "application/json");
 });
 
 builder.Services.AddHttpClient<IIndianApiShareholdingClient, IndianApiShareholdingClient>((serviceProvider, client) =>
 {
     var config = builder.Configuration.GetSection(IndianApiSettings.SectionName).Get<IndianApiSettings>() ?? new IndianApiSettings();
-    client.BaseAddress = new Uri(config.BaseUrl.TrimEnd('/') + "/");
-    client.Timeout = TimeSpan.FromSeconds(config.TimeoutSeconds > 0 ? config.TimeoutSeconds : 15);
+    var baseUrl = !string.IsNullOrWhiteSpace(config.BaseUrl) ? config.BaseUrl.TrimEnd('/') + "/" : "https://stock.indianapi.in/";
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromSeconds(config.TimeoutSeconds > 0 ? config.TimeoutSeconds : 20);
     client.DefaultRequestHeaders.Add("Accept", "application/json");
 });
 
-// Configure BharatStock Settings
+builder.Services.AddHttpClient<IIndianApiBalanceSheetClient, IndianApiBalanceSheetClient>((serviceProvider, client) =>
+{
+    var config = builder.Configuration.GetSection(IndianApiSettings.SectionName).Get<IndianApiSettings>() ?? new IndianApiSettings();
+    var baseUrl = !string.IsNullOrWhiteSpace(config.BaseUrl) ? config.BaseUrl.TrimEnd('/') + "/" : "https://stock.indianapi.in/";
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromSeconds(config.TimeoutSeconds > 0 ? config.TimeoutSeconds : 20);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+});
+
+builder.Services.AddHttpClient<IIndianApiHistoricalDataClient, IndianApiHistoricalDataClient>((serviceProvider, client) =>
+{
+    var config = builder.Configuration.GetSection(IndianApiSettings.SectionName).Get<IndianApiSettings>() ?? new IndianApiSettings();
+    var baseUrl = !string.IsNullOrWhiteSpace(config.BaseUrl) ? config.BaseUrl.TrimEnd('/') + "/" : "https://stock.indianapi.in/";
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromSeconds(config.TimeoutSeconds > 0 ? config.TimeoutSeconds : 20);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+});
+
+// Configure Backup In-Memory Providers (Strictly safe in-memory fallbacks to prevent 429 Rate Limits)
 builder.Services.Configure<BharatStockSettings>(builder.Configuration.GetSection(BharatStockSettings.SectionName));
-
-// Configure BharatStock Provider (Strictly Mock in Development ONLY when UseMockData is true; Live Provider for Production)
-var bharatConfig = builder.Configuration.GetSection(BharatStockSettings.SectionName).Get<BharatStockSettings>() ?? new BharatStockSettings();
-if (builder.Environment.IsDevelopment() && bharatConfig.UseMockData)
-{
-    builder.Services.AddScoped<IShareholdingProvider, MockShareholdingProvider>();
-    builder.Services.AddScoped<IFinancialProvider, MockFinancialProvider>();
-}
-else
-{
-    builder.Services.AddHttpClient<IShareholdingProvider, BharatStockShareholdingProvider>((serviceProvider, client) =>
-    {
-        client.BaseAddress = new Uri(bharatConfig.BaseUrl.TrimEnd('/') + "/");
-        client.Timeout = TimeSpan.FromSeconds(bharatConfig.TimeoutSeconds > 0 ? bharatConfig.TimeoutSeconds : 15);
-        client.DefaultRequestHeaders.Add("Accept", "application/json");
-    });
-
-    builder.Services.AddHttpClient<IFinancialProvider, BharatStockFinancialProvider>((serviceProvider, client) =>
-    {
-        client.BaseAddress = new Uri(bharatConfig.BaseUrl.TrimEnd('/') + "/");
-        client.Timeout = TimeSpan.FromSeconds(bharatConfig.TimeoutSeconds > 0 ? bharatConfig.TimeoutSeconds : 15);
-        client.DefaultRequestHeaders.Add("Accept", "application/json");
-    });
-}
+builder.Services.AddScoped<IShareholdingProvider, MockShareholdingProvider>();
+builder.Services.AddScoped<IFinancialProvider, MockFinancialProvider>();
 
 // Register Yahoo Finance HTTP Client
 builder.Services.AddHttpClient<StockLens_Infrastructure.ExternalServices.YahooFinanceApi.IYahooFinanceClient, StockLens_Infrastructure.ExternalServices.YahooFinanceApi.YahooFinanceClient>(client =>
@@ -89,9 +87,6 @@ builder.Services.AddScoped<IStockPriceHistoryRepository, StockPriceHistoryReposi
 
 // Register Seeders
 builder.Services.AddTransient<CompanyMasterSeeder>();
-builder.Services.AddHttpClient<IIndianApiNewsClient, IndianApiNewsClient>();
-builder.Services.AddHttpClient<IIndianApiBalanceSheetClient, IndianApiBalanceSheetClient>();
-builder.Services.AddHttpClient<IIndianApiHistoricalDataClient, IndianApiHistoricalDataClient>();
 
 // Register Business Services
 builder.Services.AddScoped<IStockNewsService, StockNewsService>();

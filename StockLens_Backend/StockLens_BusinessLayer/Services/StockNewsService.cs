@@ -83,48 +83,8 @@ namespace StockLens_BusinessLayer.Services
 
             if (stock == null)
             {
-                _logger.LogInformation("Stock {Symbol} ({Exchange}) not found in DB. Auto-registering stock.", cleanSymbol, cleanExchange);
-                
-                // Fetch real company name and industry dynamically from Yahoo Finance
                 var details = await _yahooFinanceClient.GetCompanyDetailsAsync(cleanSymbol, cleanExchange, cancellationToken);
-                
-                if (string.IsNullOrWhiteSpace(details.CompanyName))
-                {
-                    _logger.LogWarning("Failed to find valid company details for {Symbol} on Yahoo Finance. Aborting auto-registration.", cleanSymbol);
-                    throw new KeyNotFoundException($"Invalid stock symbol: '{cleanSymbol}'. Company not found.");
-                }
-
-                var companyNameToSave = details.CompanyName;
-
-                // Check if the Company already exists in CompanyMaster
-                var existingCompany = await _companyRepository.GetCompanyBySymbolAsync(cleanSymbol);
-
-                stock = new Stock
-                {
-                    Symbol = cleanSymbol,
-                    Exchange = cleanExchange,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
-
-                if (existingCompany != null)
-                {
-                    stock.CompanyId = existingCompany.Id;
-                }
-                else
-                {
-                    stock.Company = new Company 
-                    {
-                        CompanyName = companyNameToSave,
-                        Symbol = cleanSymbol,
-                        Industry = details.Industry,
-                        CreatedAt = DateTime.UtcNow,
-                        UpdatedAt = DateTime.UtcNow
-                    };
-                }
-
-                stock = await _stockRepository.AddAsync(stock);
-                await _stockRepository.SaveChangesAsync();
+                stock = await _stockRepository.GetOrCreateStockAsync(cleanSymbol, cleanExchange, details.CompanyName, details.Industry, cancellationToken);
             }
 
             return await ProcessStockNewsAsync(stock, limit, page, forceRefresh, cancellationToken);

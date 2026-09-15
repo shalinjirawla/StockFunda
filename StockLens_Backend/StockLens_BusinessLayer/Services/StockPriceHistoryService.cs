@@ -11,6 +11,8 @@ using StockLens_DataLayer.Interfaces;
 using StockLens_Infrastructure.ExternalServices.IndianApi;
 using StockLens_Infrastructure.ExternalServices.IndianApi.Models;
 
+using StockLens_Infrastructure.ExternalServices.YahooFinanceApi;
+
 namespace StockLens_BusinessLayer.Services
 {
     public class StockPriceHistoryService : IStockPriceHistoryService
@@ -19,6 +21,7 @@ namespace StockLens_BusinessLayer.Services
         private readonly IStockRepository _stockRepository;
         private readonly ICompanyRepository _companyRepository;
         private readonly IIndianApiHistoricalDataClient _apiClient;
+        private readonly IYahooFinanceClient _yahooFinanceClient;
         private readonly ILogger<StockPriceHistoryService> _logger;
 
         public StockPriceHistoryService(
@@ -26,12 +29,14 @@ namespace StockLens_BusinessLayer.Services
             IStockRepository stockRepository,
             ICompanyRepository companyRepository,
             IIndianApiHistoricalDataClient apiClient,
+            IYahooFinanceClient yahooFinanceClient,
             ILogger<StockPriceHistoryService> logger)
         {
             _priceHistoryRepository = priceHistoryRepository;
             _stockRepository = stockRepository;
             _companyRepository = companyRepository;
             _apiClient = apiClient;
+            _yahooFinanceClient = yahooFinanceClient;
             _logger = logger;
         }
 
@@ -45,39 +50,7 @@ namespace StockLens_BusinessLayer.Services
             var cleanSymbol = symbol.Trim().ToUpperInvariant();
             var cleanExchange = string.IsNullOrWhiteSpace(exchange) ? "NSE" : exchange.Trim().ToUpperInvariant();
 
-            var stock = await _stockRepository.GetBySymbolAsync(cleanSymbol, cleanExchange);
-
-            if (stock == null)
-            {
-                _logger.LogInformation("Stock {Symbol} ({Exchange}) not found in DB. Auto-registering stock.", cleanSymbol, cleanExchange);
-                var existingCompany = await _companyRepository.GetCompanyBySymbolAsync(cleanSymbol);
-                stock = new Stock
-                {
-                    Symbol = cleanSymbol,
-                    Exchange = cleanExchange,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
-
-                if (existingCompany != null)
-                {
-                    stock.CompanyId = existingCompany.Id;
-                    stock.Company = existingCompany;
-                }
-                else
-                {
-                    stock.Company = new Company
-                    {
-                        CompanyName = $"{cleanSymbol} Limited",
-                        Symbol = cleanSymbol,
-                        CreatedAt = DateTime.UtcNow,
-                        UpdatedAt = DateTime.UtcNow
-                    };
-                }
-
-                stock = await _stockRepository.AddAsync(stock);
-                await _stockRepository.SaveChangesAsync();
-            }
+            var stock = await _stockRepository.GetOrCreateStockAsync(cleanSymbol, cleanExchange, cancellationToken: cancellationToken);
 
             return await ProcessPriceHistoryAsync(stock, period, forceRefresh, cancellationToken);
         }
@@ -175,8 +148,27 @@ namespace StockLens_BusinessLayer.Services
                 {
                     _logger.LogInformation("Price history data is missing or stale. Fetching from API for {Symbol} with period 5yr (to cache maximum daily resolution)", stock.Symbol);
                     
-                    var rawPrices = await _apiClient.GetHistoricalPricesAsync(stock.Symbol, period: "5yr", exchange: stock.Exchange, cancellationToken: cancellationToken);
-                    
+                    List<IndianApiPriceRecord>? rawPrices = null;
+                    var source = "IndianAPI";
+                    try
+                    {
+                        rawPrices = await _apiClient.GetHistoricalPricesAsync(stock.Symbol, period: "5yr", exchange: stock.Exchange, cancellationToken: cancellationToken);
+                    }
+                    catch (Exception apiEx)
+                    {
+                        _logger.LogWarning(apiEx, "Failed to fetch from IndianAPI for {Symbol}", stock.Symbol);
+                    }
+
+                    if (rawPrices == null || rawPrices.Count == 0)
+                    {
+                        _logger.LogInformation("IndianAPI returned no price history for {Symbol}. Attempting fallback to Yahoo Finance API.", stock.Symbol);
+                        rawPrices = await _yahooFinanceClient.GetHistoricalPricesAsync(stock.Symbol, stock.Exchange, cancellationToken);
+                        if (rawPrices != null && rawPrices.Count > 0)
+                        {
+                            source = "YahooFinance";
+                        }
+                    }
+
                     if (rawPrices != null && rawPrices.Count > 0)
                     {
                         // Filter out records without valid dates
@@ -195,6 +187,7 @@ namespace StockLens_BusinessLayer.Services
                                 Low = r.Low ?? 0,
                                 Close = r.Close ?? 0,
                                 Volume = r.Volume ?? 0,
+                                Source = source,
                                 LastSyncedAt = DateTime.UtcNow,
                                 CreatedAt = DateTime.UtcNow,
                                 UpdatedAt = DateTime.UtcNow

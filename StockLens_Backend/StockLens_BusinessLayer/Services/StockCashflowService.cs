@@ -16,6 +16,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using StockLens_Infrastructure.ExternalServices.IndianApi;
+using StockLens_Infrastructure.ExternalServices.YahooFinanceApi;
 
 namespace StockLens_BusinessLayer.Services
 {
@@ -30,6 +31,7 @@ namespace StockLens_BusinessLayer.Services
         private readonly IMapper _mapper;
         private readonly ILogger<StockCashflowService> _logger;
         private readonly IIndianApiBalanceSheetClient? _indianApiClient;
+        private readonly IYahooFinanceClient? _yahooFinanceClient;
 
         private static readonly ConcurrentDictionary<int, SemaphoreSlim> StockLocks = new();
 
@@ -42,7 +44,8 @@ namespace StockLens_BusinessLayer.Services
             ISectorValuationService sectorValuationService,
             IMapper mapper,
             ILogger<StockCashflowService> logger,
-            IIndianApiBalanceSheetClient? indianApiClient = null)
+            IIndianApiBalanceSheetClient? indianApiClient = null,
+            IYahooFinanceClient? yahooFinanceClient = null)
         {
             _stockRepository = stockRepository;
             _financialRepository = financialRepository;
@@ -53,6 +56,7 @@ namespace StockLens_BusinessLayer.Services
             _mapper = mapper;
             _logger = logger;
             _indianApiClient = indianApiClient;
+            _yahooFinanceClient = yahooFinanceClient;
         }
 
         public async Task<StockCashflowResponseDto> GetCashflowByStockIdAsync(
@@ -83,38 +87,7 @@ namespace StockLens_BusinessLayer.Services
             var cleanSymbol = symbol.Trim().ToUpperInvariant();
             var cleanExchange = string.IsNullOrWhiteSpace(exchange) ? "NSE" : exchange.Trim().ToUpperInvariant();
 
-            var stock = await _stockRepository.GetBySymbolAsync(cleanSymbol, cleanExchange);
-            if (stock == null)
-            {
-                _logger.LogInformation("Stock {Symbol} ({Exchange}) not found in DB. Auto-registering stock.", cleanSymbol, cleanExchange);
-                var existingCompany = await _companyRepository.GetCompanyBySymbolAsync(cleanSymbol);
-                stock = new Stock
-                {
-                    Symbol = cleanSymbol,
-                    Exchange = cleanExchange,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
-
-                if (existingCompany != null)
-                {
-                    stock.CompanyId = existingCompany.Id;
-                    stock.Company = existingCompany;
-                }
-                else
-                {
-                    stock.Company = new Company
-                    {
-                        CompanyName = $"{cleanSymbol} Limited",
-                        Symbol = cleanSymbol,
-                        CreatedAt = DateTime.UtcNow,
-                        UpdatedAt = DateTime.UtcNow
-                    };
-                }
-
-                stock = await _stockRepository.AddAsync(stock);
-                await _stockRepository.SaveChangesAsync();
-            }
+            var stock = await _stockRepository.GetOrCreateStockAsync(cleanSymbol, cleanExchange, cancellationToken: cancellationToken);
 
             return await ProcessCashflowAsync(stock, forceRefresh, cancellationToken);
         }
@@ -140,8 +113,39 @@ namespace StockLens_BusinessLayer.Services
                     var cur = dbFinancials[0];
                     var dbBs = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 1);
                     var latestBsDb = dbBs.FirstOrDefault();
-                    var (totEq, eqSrc, eqPer) = DetermineTotalEquity(null, latestBsDb);
                     decimal? eqCapDb = latestBsDb?.EquityCapital ?? cur.EquityCapital;
+
+                    // Always fetch and apply real-time live price
+                    var liveQuote = await GetLiveQuoteInternalAsync(cleanSymbol, stock.Exchange, cancellationToken);
+                    if (liveQuote?.Price.HasValue == true && liveQuote.Price.Value > 0)
+                    {
+                        cur.CurrentPrice = liveQuote.Price.Value;
+                        if (liveQuote.YearHigh.HasValue) cur.Week52High = liveQuote.YearHigh;
+                        if (liveQuote.YearLow.HasValue) cur.Week52Low = liveQuote.YearLow;
+                        cur.LastSyncedAt = DateTime.UtcNow;
+                        cur.RatiosAsOfDate = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+
+                        if (cur.TtmEps.HasValue && cur.TtmEps.Value > 0)
+                            cur.PeRatio = Math.Round(cur.CurrentPrice.Value / cur.TtmEps.Value, 2);
+                        if (cur.BookValue.HasValue && cur.BookValue.Value > 0)
+                            cur.PbRatio = Math.Round(cur.CurrentPrice.Value / cur.BookValue.Value, 2);
+
+                        var (refreshedMc, refreshedShares, refreshedEqCap, refreshedMcSrc) = CalculateMarketCap(eqCapDb, cur.FaceValue, cur.CurrentPrice, cur.MarketCap);
+                        cur.MarketCap = refreshedMc;
+                        cur.MarketCapSource = refreshedMcSrc;
+
+                        try
+                        {
+                            await _financialRepository.UpdateAsync(cur);
+                            await _financialRepository.SaveChangesAsync();
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to persist refreshed live price to DB for {Symbol}", cleanSymbol);
+                        }
+                    }
+
+                    var (totEq, eqSrc, eqPer) = DetermineTotalEquity(null, latestBsDb);
                     var (mCap, tShares, eqCapOut, mSource) = CalculateMarketCap(eqCapDb, cur.FaceValue, cur.CurrentPrice, cur.MarketCap);
 
                     return new StockRatiosDto
@@ -221,20 +225,30 @@ namespace StockLens_BusinessLayer.Services
                 }
             }
 
-            // 3. Fallback: BharatStock
-            var ratiosTask = _financialProvider.GetRatiosAsync(cleanSymbol, cancellationToken);
-            var detailsTask = _financialProvider.GetStockDetailsAsync(cleanSymbol, "NSE", cancellationToken);
-            var screenerTask = _financialProvider.GetScreenerDataAsync(cleanSymbol, "NSE", cancellationToken);
-            var financialsTask = _financialProvider.GetFinancialsAsync(cleanSymbol, "annual", 1, 1, cancellationToken);
-            var livePriceTask = Task.FromResult<decimal?>(null);
+            // 3. Fallback: Backup Provider
+            BharatStockRatiosRecord? ratios = null;
+            BharatStockCompanyDetailsRecord? details = null;
+            BharatStockScreenerRecord? screener = null;
+            IReadOnlyList<BharatStockFinancialRecord>? financials = null;
+            decimal? livePrice = null;
 
-            await Task.WhenAll(ratiosTask, detailsTask, screenerTask, financialsTask, livePriceTask);
+            try
+            {
+                var ratiosTask = _financialProvider.GetRatiosAsync(cleanSymbol, cancellationToken);
+                var detailsTask = _financialProvider.GetStockDetailsAsync(cleanSymbol, "NSE", cancellationToken);
+                var screenerTask = _financialProvider.GetScreenerDataAsync(cleanSymbol, "NSE", cancellationToken);
+                var financialsTask = _financialProvider.GetFinancialsAsync(cleanSymbol, "annual", 1, 1, cancellationToken);
 
-            var ratios = await ratiosTask;
-            var details = await detailsTask;
-            var screener = await screenerTask;
-            var financials = await financialsTask;
-            var livePrice = await livePriceTask;
+                await Task.WhenAll(ratiosTask, detailsTask, screenerTask, financialsTask);
+                ratios = await ratiosTask;
+                details = await detailsTask;
+                screener = await screenerTask;
+                financials = await financialsTask;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Backup provider ratios fetch failed for {Symbol}.", cleanSymbol);
+            }
 
             if (ratios == null && details == null && screener == null && (financials == null || financials.Count == 0) && livePrice == null) return null;
 
@@ -312,6 +326,40 @@ namespace StockLens_BusinessLayer.Services
             {
                 _logger.LogInformation("Serving {Count} annual financial records from DB cache for stock {Symbol} (StockId: {StockId}, LastSynced: {LastSynced}).",
                     existingEntities.Count, stock.Symbol, stock.Id, existingEntities.Max(e => e.LastSyncedAt));
+
+                // Always check and apply real-time live price from market feed
+                try
+                {
+                    var liveQuote = await GetLiveQuoteInternalAsync(stock.Symbol, stock.Exchange, cancellationToken);
+                    if (liveQuote?.Price.HasValue == true && liveQuote.Price.Value > 0)
+                    {
+                        var cur = existingEntities[0];
+                        cur.CurrentPrice = liveQuote.Price.Value;
+                        if (liveQuote.YearHigh.HasValue) cur.Week52High = liveQuote.YearHigh;
+                        if (liveQuote.YearLow.HasValue) cur.Week52Low = liveQuote.YearLow;
+                        cur.LastSyncedAt = DateTime.UtcNow;
+                        cur.RatiosAsOfDate = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+
+                        if (cur.TtmEps.HasValue && cur.TtmEps.Value > 0)
+                            cur.PeRatio = Math.Round(cur.CurrentPrice.Value / cur.TtmEps.Value, 2);
+                        if (cur.BookValue.HasValue && cur.BookValue.Value > 0)
+                            cur.PbRatio = Math.Round(cur.CurrentPrice.Value / cur.BookValue.Value, 2);
+
+                        var dbBs = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 1);
+                        var latestBsDb = dbBs.FirstOrDefault();
+                        decimal? eqCapDb = latestBsDb?.EquityCapital ?? cur.EquityCapital;
+                        var (mCap, tShares, eqCapOut, mSource) = CalculateMarketCap(eqCapDb, cur.FaceValue, cur.CurrentPrice, cur.MarketCap);
+                        cur.MarketCap = mCap;
+                        cur.MarketCapSource = mSource;
+
+                        await _financialRepository.UpdateAsync(cur);
+                        await _financialRepository.SaveChangesAsync();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to refresh real-time live price for {Symbol}", stock.Symbol);
+                }
 
                 // If cached entity doesn't have ratios or new metrics yet, lazily fetch and update
                 if ((existingEntities[0].Roe == null && existingEntities[0].PeRatio == null) ||
@@ -601,21 +649,19 @@ namespace StockLens_BusinessLayer.Services
                 var ratiosTask = _financialProvider.GetRatiosAsync(stock.Symbol, cancellationToken);
                 var detailsTask = _financialProvider.GetStockDetailsAsync(stock.Symbol, stock.Exchange, cancellationToken);
                 var screenerTask = _financialProvider.GetScreenerDataAsync(stock.Symbol, stock.Exchange, cancellationToken);
-                var livePriceTask = _indianApiClient != null
-                    ? _indianApiClient.GetCurrentPriceAsync(stock.Symbol, stock.Exchange, cancellationToken)
-                    : Task.FromResult<decimal?>(null);
+                var livePriceTask = GetLiveQuoteInternalAsync(stock.Symbol, stock.Exchange, cancellationToken);
 
                 await Task.WhenAll(recordsTask, ratiosTask, detailsTask, screenerTask, livePriceTask);
                 records = await recordsTask;
                 ratios = await ratiosTask;
                 details = await detailsTask;
                 screener = await screenerTask;
-                livePrice = await livePriceTask;
+                var liveQuote = await livePriceTask;
+                livePrice = liveQuote?.Price;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to retrieve financials or ratios from BharatStock provider for stock {Symbol}.", stock.Symbol);
-                throw;
+                _logger.LogWarning(ex, "Failed to retrieve financials or ratios from backup provider for stock {Symbol}.", stock.Symbol);
             }
 
             if (records == null || records.Count == 0)
@@ -822,6 +868,63 @@ namespace StockLens_BusinessLayer.Services
                 entity.TotalShares = totalShares;
                 entity.EquityCapital = eqCap;
             }
+        }
+
+        private static readonly ConcurrentDictionary<string, (YahooLiveQuoteDto Quote, DateTime FetchedAt)> LiveQuoteMemoryCache = new();
+
+        private async Task<YahooLiveQuoteDto?> GetLiveQuoteInternalAsync(string symbol, string? exchange, CancellationToken cancellationToken)
+        {
+            var cleanSymbol = symbol.Trim().ToUpperInvariant();
+            var cleanExchange = string.IsNullOrWhiteSpace(exchange) ? "NSE" : exchange.Trim().ToUpperInvariant();
+            var cacheKey = $"{cleanSymbol}:{cleanExchange}";
+
+            if (LiveQuoteMemoryCache.TryGetValue(cacheKey, out var cached) && (DateTime.UtcNow - cached.FetchedAt).TotalSeconds < 30)
+            {
+                return cached.Quote;
+            }
+
+            // 1. Real-time Live Quote from Yahoo Finance (Direct exchange feed NSE/BSE)
+            if (_yahooFinanceClient != null)
+            {
+                try
+                {
+                    var quote = await _yahooFinanceClient.GetLiveQuoteAsync(cleanSymbol, cleanExchange, cancellationToken);
+                    if (quote?.Price.HasValue == true && quote.Price.Value > 0)
+                    {
+                        LiveQuoteMemoryCache[cacheKey] = (quote, DateTime.UtcNow);
+                        return quote;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to get live quote from Yahoo Finance for {Symbol}", cleanSymbol);
+                }
+            }
+
+            // 2. Primary: Try IndianAPI GetCurrentPriceAsync
+            if (_indianApiClient != null)
+            {
+                try
+                {
+                    var p = await _indianApiClient.GetCurrentPriceAsync(cleanSymbol, cleanExchange, cancellationToken);
+                    if (p.HasValue && p.Value > 0)
+                    {
+                        var q = new YahooLiveQuoteDto
+                        {
+                            Symbol = cleanSymbol,
+                            Price = p.Value
+                        };
+                        LiveQuoteMemoryCache[cacheKey] = (q, DateTime.UtcNow);
+                        return q;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to get current price from IndianAPI for {Symbol}", cleanSymbol);
+                }
+            }
+
+            return null;
         }
 
         private static (decimal? MarketCap, decimal? TotalShares, decimal? EquityCapital, string? Source) CalculateMarketCap(

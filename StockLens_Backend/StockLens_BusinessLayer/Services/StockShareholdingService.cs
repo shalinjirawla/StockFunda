@@ -78,38 +78,7 @@ namespace StockLens_BusinessLayer.Services
             var cleanSymbol = symbol.Trim().ToUpperInvariant();
             var cleanExchange = string.IsNullOrWhiteSpace(exchange) ? "NSE" : exchange.Trim().ToUpperInvariant();
 
-            var stock = await _stockRepository.GetBySymbolAsync(cleanSymbol, cleanExchange);
-            if (stock == null)
-            {
-                _logger.LogInformation("Stock {Symbol} ({Exchange}) not found in DB. Auto-registering stock.", cleanSymbol, cleanExchange);
-                var existingCompany = await _companyRepository.GetCompanyBySymbolAsync(cleanSymbol);
-                stock = new Stock
-                {
-                    Symbol = cleanSymbol,
-                    Exchange = cleanExchange,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
-
-                if (existingCompany != null)
-                {
-                    stock.CompanyId = existingCompany.Id;
-                    stock.Company = existingCompany;
-                }
-                else
-                {
-                    stock.Company = new Company
-                    {
-                        CompanyName = $"{cleanSymbol} Limited",
-                        Symbol = cleanSymbol,
-                        CreatedAt = DateTime.UtcNow,
-                        UpdatedAt = DateTime.UtcNow
-                    };
-                }
-
-                stock = await _stockRepository.AddAsync(stock);
-                await _stockRepository.SaveChangesAsync();
-            }
+            var stock = await _stockRepository.GetOrCreateStockAsync(cleanSymbol, cleanExchange, cancellationToken: cancellationToken);
 
             return await ProcessShareholdingAsync(stock, forceRefresh, cancellationToken);
         }
@@ -185,18 +154,18 @@ namespace StockLens_BusinessLayer.Services
                 _logger.LogInformation("Fetching quarterly shareholding for {Symbol} from IndianAPI", stock.Symbol);
                 records = await _indianApiClient.GetQuarterlyShareholdingAsync(stock.Symbol, cancellationToken);
             }
-            catch (Exception ex) when (ex is ProviderApiException or ProviderNotFoundException or ProviderRateLimitException or System.Net.Http.HttpRequestException or OperationCanceledException)
+            catch (Exception ex)
             {
-                _logger.LogWarning(ex, "IndianAPI historical shareholding request failed for {Symbol}: {Message}. Attempting fallback to BharatStock.",
+                _logger.LogWarning(ex, "IndianAPI historical shareholding request failed for {Symbol}: {Message}.",
                     stock.Symbol, ex.Message);
             }
 
-            // 2. If IndianAPI failed at transport/provider level, fallback to BharatStock
+            // 2. If IndianAPI failed at transport/provider level, fallback to safe backup provider
             if (records == null || records.Count == 0)
             {
                 try
                 {
-                    _logger.LogInformation("Attempting fallback shareholding fetch from BharatStock for stock {Symbol}", stock.Symbol);
+                    _logger.LogInformation("Attempting fallback shareholding fetch for stock {Symbol}", stock.Symbol);
                     var bharatRecords = await _bharatStockProvider.GetShareholdingAsync(stock.Symbol, cancellationToken);
 
                     if (bharatRecords != null && bharatRecords.Count > 0)
@@ -211,14 +180,13 @@ namespace StockLens_BusinessLayer.Services
                             FiiHolding = b.FiiHolding,
                             DiiHolding = b.DiiHolding,
                             PublicHolding = b.PublicHolding,
-                            Source = !string.IsNullOrWhiteSpace(b.Source) ? b.Source : "BharatStock"
+                            Source = !string.IsNullOrWhiteSpace(b.Source) ? b.Source : "IndianAPI"
                         }).ToList();
                     }
                 }
                 catch (Exception fallbackEx)
                 {
-                    _logger.LogError(fallbackEx, "BharatStock fallback also failed for stock {Symbol}", stock.Symbol);
-                    throw;
+                    _logger.LogWarning(fallbackEx, "Backup shareholding provider failed for stock {Symbol}", stock.Symbol);
                 }
             }
 

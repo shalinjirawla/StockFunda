@@ -11,5 +11,6 @@ namespace StockLens_DataLayer.Interfaces
         Task<IEnumerable<Stock>> GetAllStocksAsync();
         Task<Stock> AddAsync(Stock stock);
         Task<int> SaveChangesAsync();
+        Task<Stock> GetOrCreateStockAsync(string symbol, string? exchange = "NSE", string? companyName = null, string? industry = null, System.Threading.CancellationToken cancellationToken = default);
     }
 }

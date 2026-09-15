@@ -122,8 +122,8 @@ namespace StockLens_Infrastructure.ExternalServices.BharatStock
                     LatestPrice = new BharatStockLatestPriceRecord
                     {
                         TradeDate = "2026-08-12",
-                        Close = 1421.35m,
-                        PrevClose = 1408.90m,
+                        Close = 1255.80m,
+                        PrevClose = 1257.50m,
                         Volume = 8452110,
                         DeliveryPct = 42.6m
                     }
@@ -243,8 +243,8 @@ namespace StockLens_Infrastructure.ExternalServices.BharatStock
                     CompanyName = "Reliance Industries Limited",
                     Sector = "Oil Gas & Consumable Fuels",
                     Exchange = exchange,
-                    Price = 1421.35m,
-                    MarketCap = 1925400.00m, // In Crores
+                    Price = 1255.80m,
+                    MarketCap = 1701107.00m, // In Crores
                     PeRatio = 24.3m,
                     PbRatio = 2.1m,
                     BookValuePerShare = 1120.50m,
@@ -391,7 +391,7 @@ namespace StockLens_Infrastructure.ExternalServices.BharatStock
             {
                 return new List<BharatStockScreenerRecord>
                 {
-                    new() { Symbol = "RELIANCE", CompanyName = "Reliance Industries Limited", Sector = "Oil Gas & Consumable Fuels", Exchange = exchange, MarketCap = 1925400.00m, NetProfitTtm = 79020.0m, PeRatio = 24.3m, Roe = 8.9m, ComputedAt = "2026-08-15" },
+                    new() { Symbol = "RELIANCE", CompanyName = "Reliance Industries Limited", Sector = "Oil Gas & Consumable Fuels", Exchange = exchange, MarketCap = 1701107.00m, NetProfitTtm = 79020.0m, PeRatio = 21.5m, Roe = 8.9m, ComputedAt = "2026-08-15" },
                     new() { Symbol = "ONGC", CompanyName = "Oil and Natural Gas Corporation Limited", Sector = "Oil Gas & Consumable Fuels", Exchange = exchange, MarketCap = 330120.00m, NetProfitTtm = 40500.0m, PeRatio = 8.1m, Roe = 18.5m, ComputedAt = "2026-08-15" },
                     new() { Symbol = "IOC", CompanyName = "Indian Oil Corporation Limited", Sector = "Oil Gas & Consumable Fuels", Exchange = exchange, MarketCap = 180500.00m, NetProfitTtm = 12800.0m, PeRatio = 14.1m, Roe = 14.2m, ComputedAt = "2026-08-15" },
                     new() { Symbol = "BPCL", CompanyName = "Bharat Petroleum Corporation Limited", Sector = "Oil Gas & Consumable Fuels", Exchange = exchange, MarketCap = 135000.00m, NetProfitTtm = 11200.0m, PeRatio = 12.0m, Roe = 16.8m, ComputedAt = "2026-08-15" },
@@ -458,8 +458,8 @@ namespace StockLens_Infrastructure.ExternalServices.BharatStock
                 "RELIANCE" => new BharatStockRatiosRecord
                 {
                     AsOfDate = "2026-08-12",
-                    Price = 1421.35m,
-                    PeRatio = 24.3m,
+                    Price = 1255.80m,
+                    PeRatio = 21.5m,
                     PbRatio = 2.1m,
                     Roe = 8.9m,
                     Roce = 10.4m,
