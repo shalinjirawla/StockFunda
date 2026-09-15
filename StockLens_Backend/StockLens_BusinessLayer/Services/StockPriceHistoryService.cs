@@ -35,7 +35,7 @@ namespace StockLens_BusinessLayer.Services
             _logger = logger;
         }
 
-        public async Task<PriceHistoryResponseDto> GetPriceHistoryBySymbolAsync(string symbol, string? exchange = null, bool forceRefresh = false, CancellationToken cancellationToken = default)
+        public async Task<PriceHistoryResponseDto> GetPriceHistoryBySymbolAsync(string symbol, string? exchange = null, string period = "5yr", bool forceRefresh = false, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(symbol))
             {
@@ -79,10 +79,10 @@ namespace StockLens_BusinessLayer.Services
                 await _stockRepository.SaveChangesAsync();
             }
 
-            return await ProcessPriceHistoryAsync(stock, forceRefresh, cancellationToken);
+            return await ProcessPriceHistoryAsync(stock, period, forceRefresh, cancellationToken);
         }
 
-        public async Task<PriceHistoryResponseDto> GetPriceHistoryByStockIdAsync(int stockId, bool forceRefresh = false, CancellationToken cancellationToken = default)
+        public async Task<PriceHistoryResponseDto> GetPriceHistoryByStockIdAsync(int stockId, string period = "5yr", bool forceRefresh = false, CancellationToken cancellationToken = default)
         {
             var stock = await _stockRepository.GetByIdAsync(stockId);
             if (stock == null)
@@ -90,16 +90,60 @@ namespace StockLens_BusinessLayer.Services
                 return new PriceHistoryResponseDto { ErrorMessage = "Stock not found." };
             }
 
-            return await ProcessPriceHistoryAsync(stock, forceRefresh, cancellationToken);
+            return await ProcessPriceHistoryAsync(stock, period, forceRefresh, cancellationToken);
         }
 
-        private async Task<PriceHistoryResponseDto> ProcessPriceHistoryAsync(Stock stock, bool forceRefresh, CancellationToken cancellationToken)
+        private void ParsePeriod(string period, out DateTime fromDate, out int expectedDays)
+        {
+            var p = (period ?? "5yr").ToLowerInvariant();
+            var now = DateTime.UtcNow;
+            
+            switch (p)
+            {
+                case "1m":
+                    fromDate = now.AddMonths(-1);
+                    expectedDays = 20;
+                    break;
+                case "6m":
+                    fromDate = now.AddMonths(-6);
+                    expectedDays = 125;
+                    break;
+                case "1yr":
+                    fromDate = now.AddYears(-1);
+                    expectedDays = 250;
+                    break;
+                case "3yr":
+                    fromDate = now.AddYears(-3);
+                    expectedDays = 750;
+                    break;
+                case "5yr":
+                    fromDate = now.AddYears(-5);
+                    expectedDays = 1250;
+                    break;
+                case "10yr":
+                    fromDate = now.AddYears(-10);
+                    expectedDays = 2500;
+                    break;
+                case "max":
+                    fromDate = now.AddYears(-30);
+                    expectedDays = 7500;
+                    break;
+                default:
+                    fromDate = now.AddYears(-5);
+                    expectedDays = 1250;
+                    break;
+            }
+        }
+
+        private async Task<PriceHistoryResponseDto> ProcessPriceHistoryAsync(Stock stock, string period, bool forceRefresh, CancellationToken cancellationToken)
         {
             var result = new PriceHistoryResponseDto { Symbol = stock.Symbol };
 
             try
             {
                 var dbRecords = await _priceHistoryRepository.GetByStockIdAsync(stock.Id, cancellationToken);
+
+                ParsePeriod(period, out var expectedFromDate, out var expectedDays);
 
                 bool needsRefresh = forceRefresh;
                 if (!needsRefresh && dbRecords.Any())
@@ -110,11 +154,16 @@ namespace StockLens_BusinessLayer.Services
                     {
                         needsRefresh = true;
                     }
-                    // Force refresh if we have less than 4-5 years of data (approx 1000 trading days)
-                    else if (dbRecords.Count < 1000)
+                    // Force refresh if we don't have enough data for the requested period
+                    // (and we have at least *some* data older than the expected from date)
+                    else 
                     {
-                        _logger.LogInformation("Cached data for {Symbol} has less than 5 years of data ({Count} records). Forcing refresh.", stock.Symbol, dbRecords.Count);
-                        needsRefresh = true;
+                        var recordsInPeriod = dbRecords.Count(p => p.Date >= expectedFromDate);
+                        if (recordsInPeriod < expectedDays * 0.8 && dbRecords.Min(p => p.Date) > expectedFromDate)
+                        {
+                            _logger.LogInformation("Cached data for {Symbol} doesn't cover requested period {Period}. Forcing refresh.", stock.Symbol, period);
+                            needsRefresh = true;
+                        }
                     }
                 }
                 else if (!dbRecords.Any())
@@ -124,11 +173,9 @@ namespace StockLens_BusinessLayer.Services
 
                 if (needsRefresh)
                 {
-                    _logger.LogInformation("Price history data is missing or stale. Fetching from API for {Symbol}", stock.Symbol);
+                    _logger.LogInformation("Price history data is missing or stale. Fetching from API for {Symbol} with period 5yr (to cache maximum daily resolution)", stock.Symbol);
                     
-                    var fromDate = DateTime.UtcNow.AddYears(-5).ToString("yyyy-MM-dd");
-                    var toDate = DateTime.UtcNow.ToString("yyyy-MM-dd");
-                    var rawPrices = await _apiClient.GetHistoricalPricesAsync(stock.Symbol, from: fromDate, to: toDate, exchange: stock.Exchange, cancellationToken: cancellationToken);
+                    var rawPrices = await _apiClient.GetHistoricalPricesAsync(stock.Symbol, period: "5yr", exchange: stock.Exchange, cancellationToken: cancellationToken);
                     
                     if (rawPrices != null && rawPrices.Count > 0)
                     {
@@ -166,7 +213,9 @@ namespace StockLens_BusinessLayer.Services
                     }
                 }
 
-                return MapToResponseDto(stock, dbRecords.ToList());
+                // Filter to return only the requested period
+                var filteredRecords = dbRecords.Where(r => r.Date >= expectedFromDate).ToList();
+                return MapToResponseDto(stock, filteredRecords);
             }
             catch (Exception ex)
             {

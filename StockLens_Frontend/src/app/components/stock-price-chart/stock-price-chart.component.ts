@@ -14,6 +14,7 @@ import { TimeAgoPipe } from '../../pipes/time-ago.pipe';
 export class StockPriceChartComponent implements OnChanges, OnInit {
   @Input() symbol!: string;
   @Input() exchange: string = 'NSE';
+  @Input() period: string = '5yr';
   @Output() errorOccurred = new EventEmitter<string>();
 
   private priceService = inject(StockPriceHistoryService);
@@ -22,10 +23,10 @@ export class StockPriceChartComponent implements OnChanges, OnInit {
   loadingState: 'loading' | 'success' | 'error' | 'empty' = 'loading';
   errorMessage = '';
   priceHistory: PriceHistoryResponseDto | null = null;
+  updateFlag = false;
 
   Highcharts: typeof Highcharts = Highcharts;
   chartOptions: Highcharts.Options = {};
-  updateFlag = false;
 
   ngOnInit(): void {
     if (this.symbol && !this.priceHistory && this.loadingState !== 'success') {
@@ -34,11 +35,10 @@ export class StockPriceChartComponent implements OnChanges, OnInit {
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if ((changes['symbol'] || changes['exchange']) && this.symbol) {
-      // Avoid refetching if ngOnInit already started it
-      if (!changes['symbol']?.isFirstChange()) {
-        this.loadPriceHistory(false);
-      }
+    if (changes['symbol'] && changes['symbol'].isFirstChange()) return;
+
+    if (this.symbol && (changes['symbol'] || changes['exchange'] || changes['period'])) {
+      this.loadPriceHistory(false);
     }
   }
 
@@ -46,11 +46,10 @@ export class StockPriceChartComponent implements OnChanges, OnInit {
     this.loadingState = 'loading';
     this.errorMessage = '';
 
-    this.priceService.getPriceHistory(this.symbol, this.exchange, refresh).subscribe({
+    this.priceService.getPriceHistory(this.symbol, this.exchange, this.period, refresh).subscribe({
       next: (data) => {
         if (!data || !data.dates || data.dates.length === 0) {
           this.loadingState = 'empty';
-          this.priceHistory = null;
           this.cd.detectChanges();
         } else {
           this.priceHistory = data;
@@ -91,14 +90,36 @@ export class StockPriceChartComponent implements OnChanges, OnInit {
       return [date, data.volumes[i]];
     });
 
+    // Determine axis formatting based on period
+    let tickInterval = 365 * 24 * 3600 * 1000; // 1 year default
+    let labelFormat = '{value:%Y}';
+    const p = (this.period || '5yr').toLowerCase();
+    
+    if (p === '1m') {
+      tickInterval = 7 * 24 * 3600 * 1000; // 1 week
+      labelFormat = '{value:%e %b}';
+    } else if (p === '6m') {
+      tickInterval = 30 * 24 * 3600 * 1000; // 1 month
+      labelFormat = '{value:%e %b}';
+    } else if (p === '1yr') {
+      tickInterval = 3 * 30 * 24 * 3600 * 1000; // 3 months
+      labelFormat = '{value:%b %Y}';
+    } else if (p === '3yr') {
+      tickInterval = 6 * 30 * 24 * 3600 * 1000; // 6 months
+      labelFormat = '{value:%b %Y}';
+    } else if (p === '5yr') {
+      tickInterval = 365 * 24 * 3600 * 1000; // 1 year
+      labelFormat = '{value:%b %Y}';
+    } else {
+      tickInterval = 2 * 365 * 24 * 3600 * 1000; // 2 years
+      labelFormat = '{value:%Y}';
+    }
+
     this.chartOptions = {
       chart: {
         backgroundColor: 'transparent',
-        alignTicks: false,
-        style: {
-          fontFamily: 'Inter, system-ui, sans-serif'
-        },
-        height: 500
+        style: { fontFamily: 'Inter, sans-serif' },
+        marginRight: 60 // Space for right Y axis labels
       },
       title: {
         text: ''
@@ -111,9 +132,9 @@ export class StockPriceChartComponent implements OnChanges, OnInit {
         gridLineColor: 'rgba(255, 255, 255, 0.05)',
         labels: {
           style: { color: 'rgba(255, 255, 255, 0.6)' },
-          format: '{value:%Y}'
+          format: labelFormat
         },
-        tickInterval: 365 * 24 * 3600 * 1000, // 1 year interval
+        tickInterval: tickInterval,
         lineColor: 'rgba(255, 255, 255, 0.1)',
         tickColor: 'rgba(255, 255, 255, 0.1)'
       },

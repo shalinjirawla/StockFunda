@@ -35,15 +35,16 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
             }
         }
 
-        public async Task<List<IndianApiPriceRecord>> GetHistoricalPricesAsync(string cleanTicker, string? from, string? to, string? exchange = null, CancellationToken cancellationToken = default)
+        public async Task<List<IndianApiPriceRecord>> GetHistoricalPricesAsync(string cleanTicker, string period = "5yr", string? exchange = null, CancellationToken cancellationToken = default)
         {
             var allRecords = new List<IndianApiPriceRecord>();
             
-            DateTime endDate = string.IsNullOrWhiteSpace(to) ? DateTime.UtcNow : DateTime.Parse(to);
-            DateTime startDate = string.IsNullOrWhiteSpace(from) ? endDate.AddYears(-5) : DateTime.Parse(from);
-
             var pureTicker = cleanTicker.Replace(".NS", "").Replace(".BO", "");
-            var endpoint = $"/historical_data?stock_name={Uri.EscapeDataString(pureTicker)}&period=5yr&filter=price";
+            
+            // Default to 5yr if an invalid or empty period is passed
+            if (string.IsNullOrWhiteSpace(period)) period = "5yr";
+            
+            var endpoint = $"/historical_data?stock_name={Uri.EscapeDataString(pureTicker)}&period={Uri.EscapeDataString(period)}&filter=price";
 
             try
             {

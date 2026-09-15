@@ -60,6 +60,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
   selectedSymbol = signal<string>('RELIANCE');
   selectedExchange = signal<string>('NSE');
   searchQuery = signal<string>('');
+  chartPeriod = signal<string>('5yr');
 
   // Flag to disable scrollspy tracking briefly during programmatic smooth scrolling
   private isProgrammaticScrolling = false;
@@ -249,6 +250,10 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
       this.searchResults.set([]);
       this.fetchAllData(false);
     }
+  }
+
+  setChartPeriod(period: string): void {
+    this.chartPeriod.set(period);
   }
 
   onSearchInput(event: Event): void {

@@ -24,17 +24,20 @@ export class StockPriceHistoryService {
 
   constructor(private http: HttpClient) { }
 
-  getPriceHistory(symbol: string, exchange = 'NSE', refresh = false): Observable<PriceHistoryResponseDto> {
+  getPriceHistory(symbol: string, exchange = 'NSE', period = '5yr', refresh = false): Observable<PriceHistoryResponseDto> {
     const params = new HttpParams()
       .set('symbol', symbol)
       .set('exchange', exchange)
+      .set('period', period)
       .set('refresh', refresh.toString());
 
     return this.http.get<PriceHistoryResponseDto>(`${this.apiUrl}/api/stocks/prices`, { params });
   }
 
-  getPriceHistoryByStockId(stockId: number, refresh = false): Observable<PriceHistoryResponseDto> {
-    const params = new HttpParams().set('refresh', refresh.toString());
+  getPriceHistoryByStockId(stockId: number, period = '5yr', refresh = false): Observable<PriceHistoryResponseDto> {
+    const params = new HttpParams()
+      .set('period', period)
+      .set('refresh', refresh.toString());
     return this.http.get<PriceHistoryResponseDto>(`${this.apiUrl}/api/stocks/${stockId}/prices`, { params });
   }
 }

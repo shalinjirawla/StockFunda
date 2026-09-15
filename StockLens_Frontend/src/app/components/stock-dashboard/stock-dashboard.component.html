@@ -264,13 +264,11 @@
         <div class="chart-header-controls">
           <!-- Timeframe Selector Pills -->
           <div class="chart-timeframe-group">
-            <button type="button" class="tf-btn">1M</button>
-            <button type="button" class="tf-btn">6M</button>
-            <button type="button" class="tf-btn active">1Yr</button>
-            <button type="button" class="tf-btn">3Yr</button>
-            <button type="button" class="tf-btn">5Yr</button>
-            <button type="button" class="tf-btn">10Yr</button>
-            <button type="button" class="tf-btn">Max</button>
+            <button type="button" class="tf-btn" [class.active]="chartPeriod() === '1m'" (click)="setChartPeriod('1m')">1M</button>
+            <button type="button" class="tf-btn" [class.active]="chartPeriod() === '6m'" (click)="setChartPeriod('6m')">6M</button>
+            <button type="button" class="tf-btn" [class.active]="chartPeriod() === '1yr'" (click)="setChartPeriod('1yr')">1Yr</button>
+            <button type="button" class="tf-btn" [class.active]="chartPeriod() === '3yr'" (click)="setChartPeriod('3yr')">3Yr</button>
+            <button type="button" class="tf-btn" [class.active]="chartPeriod() === '5yr'" (click)="setChartPeriod('5yr')">5Yr</button>
           </div>
 
         </div>
@@ -280,6 +278,7 @@
           <app-stock-price-chart
             [symbol]="selectedSymbol()"
             [exchange]="selectedExchange()"
+            [period]="chartPeriod()"
           ></app-stock-price-chart>
         </div>
       </div>

@@ -26,6 +26,7 @@ namespace StockLens_API.Controllers
         public async Task<IActionResult> GetPriceHistoryBySymbol(
             [FromQuery] string symbol, 
             [FromQuery] string? exchange = null, 
+            [FromQuery] string period = "5yr",
             [FromQuery] bool refresh = false,
             CancellationToken cancellationToken = default)
         {
@@ -36,8 +37,9 @@ namespace StockLens_API.Controllers
 
             try
             {
-                var result = await _priceHistoryService.GetPriceHistoryBySymbolAsync(symbol, exchange, refresh, cancellationToken);
+                var result = await _priceHistoryService.GetPriceHistoryBySymbolAsync(symbol, exchange, period, refresh, cancellationToken);
                 return Ok(result);
+
             }
             catch (System.Collections.Generic.KeyNotFoundException ex)
             {
@@ -68,12 +70,13 @@ namespace StockLens_API.Controllers
         [ProducesResponseType(500)]
         public async Task<IActionResult> GetPriceHistoryByStockId(
             int stockId, 
+            [FromQuery] string period = "5yr",
             [FromQuery] bool refresh = false,
             CancellationToken cancellationToken = default)
         {
             try
             {
-                var result = await _priceHistoryService.GetPriceHistoryByStockIdAsync(stockId, refresh, cancellationToken);
+                var result = await _priceHistoryService.GetPriceHistoryByStockIdAsync(stockId, period, refresh, cancellationToken);
                 return Ok(result);
             }
             catch (System.Collections.Generic.KeyNotFoundException ex)
