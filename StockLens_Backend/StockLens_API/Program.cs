@@ -15,6 +15,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers()
     .AddNewtonsoftJson(options => options.SerializerSettings.ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore);
 
+builder.Services.AddMemoryCache();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -96,6 +97,7 @@ builder.Services.AddHttpClient<IIndianApiHistoricalDataClient, IndianApiHistoric
 builder.Services.AddScoped<IStockNewsService, StockNewsService>();
 builder.Services.AddScoped<ICompanyService, CompanyService>();
 builder.Services.AddScoped<IStockShareholdingService, StockShareholdingService>();
+builder.Services.AddScoped<ISectorValuationService, SectorValuationService>();
 builder.Services.AddScoped<IStockCashflowService, StockCashflowService>();
 builder.Services.AddScoped<IStockBalanceSheetService, StockBalanceSheetService>();
 builder.Services.AddScoped<IStockPriceHistoryService, StockPriceHistoryService>();

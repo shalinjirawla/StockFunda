@@ -33,13 +33,6 @@ namespace StockLens_BusinessLayer.MapperProfile
                 .ForMember(dest => dest.Others, opt => opt.MapFrom(src => src.OtherHolding))
                 .ForMember(dest => dest.ShareholdersCount, opt => opt.MapFrom(src => src.ShareholdersCount))
                 .ForMember(dest => dest.DataAsOf, opt => opt.Ignore());
-
-            CreateMap<StockFinancial, AnnualCashflowItemDto>()
-                .ForMember(dest => dest.DataAsOf, opt => opt.Ignore())
-                .ForMember(dest => dest.PeriodEndDate, opt => opt.Ignore())
-                .ForMember(dest => dest.CfoToNetProfitRatio, opt => opt.Ignore())
-                .ForMember(dest => dest.FcfMarginPercent, opt => opt.Ignore())
-                .ForMember(dest => dest.CapexToCfoPercent, opt => opt.Ignore());
         }
     }
 }

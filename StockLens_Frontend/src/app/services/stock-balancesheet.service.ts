@@ -6,9 +6,9 @@ import { environment } from '../../environments/environment';
 
 
 export interface BalanceSheetLineItemDto {
-    name: string;
-    isTotal: boolean;
-    values: (number | null)[];
+  name: string;
+  isTotal: boolean;
+  values: (number | null)[];
 }
 
 export interface BalanceSheetResponseDto {

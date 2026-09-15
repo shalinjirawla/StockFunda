@@ -106,5 +106,64 @@ namespace StockLens_UnitTests
             records[0].CashFlowOperating.Should().Be(48920.0m);
             records[0].Capex.Should().Be(4200.0m);
         }
+
+        [Fact]
+        public void ParseCompanyDetailsResponse_ShouldParseFaceValueAndCompanyInfo()
+        {
+            var json = @"{
+              ""symbol"": ""RELIANCE"",
+              ""company_name"": ""Reliance Industries Limited"",
+              ""sector"": ""Oil Gas & Consumable Fuels"",
+              ""exchange"": ""NSE"",
+              ""industry"": ""Petroleum Products"",
+              ""face_value"": 10.0,
+              ""latest_price"": {
+                ""trade_date"": ""2026-08-12"",
+                ""close"": 1421.35,
+                ""prev_close"": 1408.90,
+                ""volume"": 8452110,
+                ""delivery_pct"": 42.6
+              }
+            }";
+
+            var result = BharatStockFinancialProvider.ParseCompanyDetailsResponse(json, "RELIANCE");
+
+            result.Should().NotBeNull();
+            result!.Symbol.Should().Be("RELIANCE");
+            result.CompanyName.Should().Be("Reliance Industries Limited");
+            result.FaceValue.Should().Be(10.0m);
+            result.LatestPrice.Should().NotBeNull();
+            result.LatestPrice!.Close.Should().Be(1421.35m);
+        }
+
+        [Fact]
+        public void ParseScreenerResponse_ShouldParseBookValueAndMarketCap()
+        {
+            var json = @"[
+              {
+                ""symbol"": ""ONGC"",
+                ""company_name"": ""Oil and Natural Gas Corporation Limited"",
+                ""sector"": ""Oil Gas & Consumable Fuels"",
+                ""exchange"": ""NSE"",
+                ""price"": 262.50,
+                ""market_cap"": 330120.45,
+                ""pe_ratio"": 7.8,
+                ""pb_ratio"": 1.2,
+                ""book_value_per_share"": 218.75,
+                ""roe"": 18.5,
+                ""roce"": 22.1,
+                ""computed_at"": ""2026-08-15""
+              }
+            ]";
+
+            var result = BharatStockFinancialProvider.ParseScreenerResponse(json, "ONGC");
+
+            result.Should().NotBeNull();
+            result!.Symbol.Should().Be("ONGC");
+            result.MarketCap.Should().Be(330120.45m);
+            result.ResolvedBookValue.Should().Be(218.75m);
+            result.PeRatio.Should().Be(7.8m);
+        }
     }
 }
+

@@ -136,11 +136,18 @@ namespace StockLens_BusinessLayer.Services
                 bool needsRefresh = forceRefresh;
                 if (!needsRefresh && dbRecords.Any())
                 {
-                    // Check if data is fresh (synced within last 7 days)
+                    // Check if data is fresh (synced within last 7 days based on LastSyncedAt)
                     var lastSync = dbRecords.Max(b => b.LastSyncedAt);
                     if ((DateTime.UtcNow - lastSync).TotalDays > 7)
                     {
                         needsRefresh = true;
+                        _logger.LogInformation("Balance sheet DB records are >= 7 days old for {Symbol} (LastSynced: {LastSynced}). Triggering IndianAPI sync.",
+                            stock.Symbol, lastSync);
+                    }
+                    else
+                    {
+                        _logger.LogInformation("Serving {Count} balance sheet records from DB cache for stock {Symbol} (LastSynced: {LastSynced}).",
+                            dbRecords.Count, stock.Symbol, lastSync);
                     }
                 }
                 else if (!dbRecords.Any())

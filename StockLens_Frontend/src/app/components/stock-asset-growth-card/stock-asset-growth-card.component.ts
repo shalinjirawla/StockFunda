@@ -2,12 +2,17 @@ import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { BalanceSheetResponseDto } from '../../services/stock-balancesheet.service';
 import { LoadingState } from '../../models/stock-news.model';
-import { TimeAgoPipe } from '../../pipes/time-ago.pipe';
+
+export interface AssetPeriodMetric {
+  period: string;
+  value: number | null;
+  formattedValue: string;
+}
 
 @Component({
   selector: 'app-stock-asset-growth-card',
   standalone: true,
-  imports: [CommonModule, TimeAgoPipe],
+  imports: [CommonModule],
   templateUrl: './stock-asset-growth-card.component.html',
   styleUrl: './stock-asset-growth-card.component.css'
 })
@@ -25,49 +30,56 @@ export class StockAssetGrowthCardComponent {
     }
   }
 
-  get gridData() {
+  get totalAssetsData() {
     if (!this.balanceSheet || !this.balanceSheet.periods || this.balanceSheet.periods.length === 0) {
       return null;
     }
 
     const periods = this.balanceSheet.periods;
-    const n = periods.length;
+    const totalAssetsItem = this.balanceSheet.lineItems?.find(
+      item => item.name?.toLowerCase().includes('total assets') || item.isTotal
+    );
 
-    const rows = this.balanceSheet.lineItems.map(item => {
-      // Delta is always between the last two periods available
-      let deltaPercent = 0;
-      let trendText = 'Stable';
-      let trendIcon = '➖';
+    const values = totalAssetsItem ? totalAssetsItem.values : [];
 
-      if (n >= 2) {
-        const val1 = item.values[n - 2] ?? 0;
-        const val2 = item.values[n - 1] ?? 0;
-        if (val1 !== 0) {
-          deltaPercent = ((val2 - val1) / Math.abs(val1)) * 100;
-        }
-
-        if (deltaPercent > 0) {
-          trendText = 'Increase';
-          trendIcon = '↗';
-        } else if (deltaPercent < 0) {
-          trendText = 'Decrease';
-          trendIcon = '↘';
-        }
-      }
-
+    const metrics: AssetPeriodMetric[] = periods.map((period, index) => {
+      const val = values[index] ?? null;
       return {
-        name: item.name,
-        isTotal: item.isTotal,
-        values: item.values,
-        deltaPercent,
-        trendText,
-        trendIcon
+        period,
+        value: val,
+        formattedValue: this.formatCurrency(val)
       };
     });
 
+    let growthPercent = this.balanceSheet.assetGrowthPercentage ?? 0;
+    const n = periods.length;
+    if (n >= 2 && (!growthPercent || isNaN(growthPercent))) {
+      const prev = values[n - 2] ?? 0;
+      const latest = values[n - 1] ?? 0;
+      if (prev !== 0) {
+        growthPercent = ((latest - prev) / Math.abs(prev)) * 100;
+      }
+    }
+
+    const startPeriod = periods[0];
+    const endPeriod = periods[periods.length - 1];
+    const growthRangeText = periods.length >= 2
+      ? `YoY Growth (${startPeriod} → ${endPeriod})`
+      : 'YoY Growth';
+
     return {
-      periods,
-      rows
+      metrics,
+      growthPercent,
+      isPositive: growthPercent >= 0,
+      growthRangeText
     };
+  }
+
+  formatCurrency(value: number | null): string {
+    if (value === null || value === undefined || isNaN(value)) {
+      return '₹ 0 Cr';
+    }
+    const formatted = Math.round(value).toLocaleString('en-IN');
+    return `₹ ${formatted} Cr`;
   }
 }

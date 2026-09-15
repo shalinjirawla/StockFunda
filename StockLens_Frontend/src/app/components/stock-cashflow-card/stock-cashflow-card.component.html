@@ -1,137 +1,149 @@
 <div class="cashflow-container">
   <!-- State 1: Loading Skeleton -->
   @if (loadingState === 'loading') {
-    <div class="skeleton-wrapper">
-      <div class="skeleton-header shimmer"></div>
-      <div class="cards-grid">
-        @for (i of [1, 2, 3, 4]; track i) {
-          <div class="skeleton-metric-card">
-            <div class="skeleton-line shimmer short"></div>
-            <div class="skeleton-line shimmer large"></div>
-            <div class="skeleton-line shimmer medium"></div>
-            <div class="skeleton-bar shimmer"></div>
-          </div>
-        }
+  <div class="skeleton-wrapper">
+    <div class="skeleton-header shimmer"></div>
+    <div class="skeleton-section-title shimmer short"></div>
+    <div class="cards-grid ratios-grid">
+      @for (i of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; track i) {
+      <div class="skeleton-metric-card">
+        <div class="skeleton-line shimmer short"></div>
+        <div class="skeleton-line shimmer large"></div>
+        <div class="skeleton-line shimmer medium"></div>
+        <div class="skeleton-bar shimmer"></div>
       </div>
-      <div class="skeleton-distribution shimmer"></div>
-      <div class="skeleton-table shimmer"></div>
+      }
     </div>
+    <div class="skeleton-section-title shimmer short" style="margin-top: 1.5rem;"></div>
+    <div class="cards-grid">
+      @for (i of [1, 2, 3, 4]; track i) {
+      <div class="skeleton-metric-card">
+        <div class="skeleton-line shimmer short"></div>
+        <div class="skeleton-line shimmer large"></div>
+        <div class="skeleton-line shimmer medium"></div>
+        <div class="skeleton-bar shimmer"></div>
+      </div>
+      }
+    </div>
+  </div>
   }
 
   <!-- State 2: Error State -->
   @if (loadingState === 'error') {
-    <div class="state-card error-state">
-      <div class="state-icon-wrapper error-icon-bg">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="state-svg error-color">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="12" y1="8" x2="12" y2="12"></line>
-          <line x1="12" y1="16" x2="12.01" y2="16"></line>
-        </svg>
-      </div>
-      <h3 class="state-title">Unable to Load Cash Flow Data</h3>
-      <p class="state-description">{{ errorMessage || 'An error occurred while communicating with BharatStock Financials API.' }}</p>
-      <button type="button" class="action-btn" (click)="onRefreshClick()">
-        Retry Sync
-      </button>
+  <div class="state-card error-state">
+    <div class="state-icon-wrapper error-icon-bg">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="state-svg error-color">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="8" x2="12" y2="12"></line>
+        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+      </svg>
     </div>
+    <h3 class="state-title">Unable to Load Cash Flow & Ratios Data</h3>
+    <p class="state-description">{{ errorMessage || 'An error occurred while communicating with BharatStock Financials
+      API.' }}</p>
+    <button type="button" class="action-btn" (click)="onRefreshClick()">
+      Retry Sync
+    </button>
+  </div>
   }
 
   <!-- State 3: Empty State -->
   @if (loadingState === 'empty') {
-    <div class="state-card empty-state">
-      <div class="state-icon-wrapper">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="state-svg">
-          <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-        </svg>
-      </div>
-      <h3 class="state-title">Annual Financial Statements Not Available</h3>
-      <p class="state-description">
-        No annual XBRL cash flow filing records were found for this stock.
-      </p>
-      <button type="button" class="action-btn" (click)="onRefreshClick()">
-        Check for Updates
-      </button>
+  <div class="state-card empty-state">
+    <div class="state-icon-wrapper">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="state-svg">
+        <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+      </svg>
     </div>
+    <h3 class="state-title">Annual Financial Statements Not Available</h3>
+    <p class="state-description">
+      No annual XBRL cash flow or ratio filing records were found for this stock.
+    </p>
+    <button type="button" class="action-btn" (click)="onRefreshClick()">
+      Check for Updates
+    </button>
+  </div>
   }
 
   <!-- State 4: Success Content -->
   @if (loadingState === 'success' && cashflow && activePeriod; as current) {
-    <!-- Metadata & Period Header Bar -->
-    <div class="pattern-header-card">
-      <div class="header-left">
-        <div class="period-badge-group">
-          <span class="period-pill active">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pill-icon">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-              <line x1="16" y1="2" x2="16" y2="6"></line>
-              <line x1="8" y1="2" x2="8" y2="6"></line>
-              <line x1="3" y1="10" x2="21" y2="10"></line>
-            </svg>
-            {{ current.fiscalYear }} Annual Statement
-          </span>
-          @if (current.consolidationType) {
-            <span class="consolidation-pill">
-              {{ current.consolidationType | uppercase }}
-            </span>
-          }
-          @if (selectedHistoricalPeriod()) {
-            <button type="button" class="reset-view-btn" (click)="selectPeriod(null)">
-              ✕ Reset to Latest ({{ cashflow.latestFiscalYear }})
-            </button>
-          }
-        </div>
-
-        <div class="meta-details">
-          @if (current.dataAsOf || current.periodEndDate) {
-            <span class="meta-item">
-              <strong>Period End:</strong> {{ current.dataAsOf || current.periodEndDate }}
-            </span>
-          }
-          <span class="meta-item">
-            <strong>Source:</strong> {{ cashflow.source }}
-          </span>
-          <span class="meta-item">
-            <strong>Last synced:</strong> {{ cashflow.lastSyncedAt | timeAgo }}
-          </span>
-        </div>
+  <!-- Metadata & Period Header Bar -->
+  <div class="pattern-header-card">
+    <div class="header-left">
+      <div class="period-badge-group">
+        <span class="period-pill active">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pill-icon">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line>
+            <line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+          </svg>
+          {{ current.fiscalYear }} Annual Statement
+        </span>
+        @if (current.consolidationType) {
+        <span class="consolidation-pill">
+          {{ current.consolidationType | uppercase }}
+        </span>
+        }
+        @if (ratios?.asOfDate) {
+        <span class="ratios-asof-pill">
+          Ratios as of: {{ ratios?.asOfDate }}
+        </span>
+        }
       </div>
 
-      <div class="header-right">
-        <button 
-          type="button" 
-          class="sync-btn"
-          [disabled]="isRefreshing"
-          (click)="onRefreshClick()"
-        >
-          <svg 
-            class="sync-icon" 
-            [class.spinning]="isRefreshing"
-            viewBox="0 0 24 24" 
-            fill="none" 
-            stroke="currentColor" 
-            stroke-width="2"
-          >
-            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
-          </svg>
-          <span>{{ isRefreshing ? 'Syncing Financials...' : 'Refresh Financials' }}</span>
-        </button>
+      <div class="meta-details">
+        @if (current.dataAsOf || current.periodEndDate) {
+        <span class="meta-item">
+          <strong>Period End:</strong> {{ current.dataAsOf || current.periodEndDate }}
+        </span>
+        }
+        <span class="meta-item">
+          <strong>Source:</strong> {{ cashflow.source }}
+        </span>
+        <span class="meta-item">
+          <strong>Last synced:</strong> {{ cashflow.lastSyncedAt | timeAgo }}
+        </span>
       </div>
     </div>
 
-    <!-- 4 Main Financial Metric Cards Grid -->
+    <div class="header-right">
+      <button type="button" class="sync-btn" [disabled]="isRefreshing" (click)="onRefreshClick()">
+        <svg class="sync-icon" [class.spinning]="isRefreshing" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2">
+          <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+        </svg>
+        <span>{{ isRefreshing ? 'Syncing Financials...' : 'Refresh Financials' }}</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- SECTION 1: Cash Flow & Capital Allocation Dynamics (4 Cards) -->
+  <div class="section-container">
+    <div class="section-title-row">
+      <div class="section-title-left">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="section-icon">
+          <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+        </svg>
+        <h3 class="section-heading">Cash Flow & Capital Allocation Dynamics</h3>
+      </div>
+      <span class="section-badge">XBRL Cash Flows</span>
+    </div>
+
     <div class="cards-grid">
-      <!-- 1. Free Cash Flow (FCF) Hero Card -->
+      <!-- 1. Free Cash Flow (FCF) Card -->
       <div class="metric-card fcf-card">
         <div class="card-top">
           <div class="category-header">
             <span class="category-indicator fcf-dot"></span>
             <span class="category-title">Free Cash Flow (FCF)</span>
           </div>
-          @if (cashflow.summary.yoYChange.freeCashFlowGrowth !== null && cashflow.summary.yoYChange.freeCashFlowGrowth !== undefined && !selectedHistoricalPeriod()) {
-            <span class="movement-badge" [ngClass]="getChangeClass(cashflow.summary.yoYChange.freeCashFlowGrowth)">
-              <span class="arrow">{{ getArrow(cashflow.summary.yoYChange.freeCashFlowGrowth) }}</span>
-              {{ formatPercent(cashflow.summary.yoYChange.freeCashFlowGrowth) }} YoY
-            </span>
+          @if (cashflow.summary.yoYChange.freeCashFlowGrowth !== null && cashflow.summary.yoYChange.freeCashFlowGrowth
+          !== undefined) {
+          <span class="movement-badge" [ngClass]="getChangeClass(cashflow.summary.yoYChange.freeCashFlowGrowth)">
+            <span class="arrow">{{ getArrow(cashflow.summary.yoYChange.freeCashFlowGrowth) }}</span>
+            {{ formatPercent(cashflow.summary.yoYChange.freeCashFlowGrowth) }} YoY
+          </span>
           }
         </div>
 
@@ -142,12 +154,13 @@
         <div class="card-formula-row">
           <span class="formula-tag">CFO − Capex</span>
           @if (current.fcfMarginPercent !== null && current.fcfMarginPercent !== undefined) {
-            <span class="sub-metric">FCF Margin: <strong>{{ formatPercent(current.fcfMarginPercent) }}</strong></span>
+          <span class="sub-metric">FCF Margin: <strong>{{ formatPercent(current.fcfMarginPercent) }}</strong></span>
           }
         </div>
 
         <div class="mini-progress-track">
-          <div class="mini-progress-fill fcf-fill" [style.width.%]="getBarHeightPercentage(current.freeCashFlow, getMaxOperatingCashFlow())"></div>
+          <div class="mini-progress-fill fcf-fill"
+            [style.width.%]="getBarHeightPercentage(current.freeCashFlow, getMaxOperatingCashFlow())"></div>
         </div>
       </div>
 
@@ -158,11 +171,12 @@
             <span class="category-indicator cfo-dot"></span>
             <span class="category-title">Operating Cash Flow (CFO)</span>
           </div>
-          @if (cashflow.summary.yoYChange.operatingCashFlowGrowth !== null && cashflow.summary.yoYChange.operatingCashFlowGrowth !== undefined && !selectedHistoricalPeriod()) {
-            <span class="movement-badge" [ngClass]="getChangeClass(cashflow.summary.yoYChange.operatingCashFlowGrowth)">
-              <span class="arrow">{{ getArrow(cashflow.summary.yoYChange.operatingCashFlowGrowth) }}</span>
-              {{ formatPercent(cashflow.summary.yoYChange.operatingCashFlowGrowth) }} YoY
-            </span>
+          @if (cashflow.summary.yoYChange.operatingCashFlowGrowth !== null &&
+          cashflow.summary.yoYChange.operatingCashFlowGrowth !== undefined) {
+          <span class="movement-badge" [ngClass]="getChangeClass(cashflow.summary.yoYChange.operatingCashFlowGrowth)">
+            <span class="arrow">{{ getArrow(cashflow.summary.yoYChange.operatingCashFlowGrowth) }}</span>
+            {{ formatPercent(cashflow.summary.yoYChange.operatingCashFlowGrowth) }} YoY
+          </span>
           }
         </div>
 
@@ -171,213 +185,86 @@
         </div>
 
         <div class="card-formula-row">
-          @if (current.cfoToNetProfitRatio !== null && current.cfoToNetProfitRatio !== undefined) {
-            <span class="quality-badge" [class.high]="current.cfoToNetProfitRatio >= 1.0">
-              CFO / NP: {{ formatRatio(current.cfoToNetProfitRatio) }}
-            </span>
-            <span class="sub-metric">{{ current.cfoToNetProfitRatio >= 1.0 ? 'High Quality Cash Backing' : 'Accrual Dominant' }}</span>
-          } @else {
-            <span class="sub-metric">Cash Generated from Operations</span>
-          }
+          <span class="formula-tag">Cash from Core Operations</span>
+          <span class="sub-metric">Operating Activities</span>
         </div>
 
         <div class="mini-progress-track">
-          <div class="mini-progress-fill cfo-fill" [style.width.%]="getBarHeightPercentage(current.operatingCashFlow, getMaxOperatingCashFlow())"></div>
+          <div class="mini-progress-fill cfo-fill"
+            [style.width.%]="getBarHeightPercentage(current.operatingCashFlow, getMaxOperatingCashFlow())"></div>
         </div>
       </div>
 
-      <!-- 3. Capital Expenditures (Capex) Card -->
-      <div class="metric-card capex-card">
+      <!-- 3. Net Cash Flow Card -->
+      <div class="metric-card net-card">
         <div class="card-top">
           <div class="category-header">
-            <span class="category-indicator capex-dot"></span>
-            <span class="category-title">Capex (PPE & Intangibles)</span>
+            <span class="category-indicator net-dot"></span>
+            <span class="category-title">Net Cash Flow</span>
           </div>
-          @if (cashflow.summary.yoYChange.capexGrowth !== null && cashflow.summary.yoYChange.capexGrowth !== undefined && !selectedHistoricalPeriod()) {
-            <span class="movement-badge neutral">
-              {{ formatPercent(cashflow.summary.yoYChange.capexGrowth) }} YoY
-            </span>
+          @if (cashflow.summary.yoYChange.netCashFlowGrowth !== null && cashflow.summary.yoYChange.netCashFlowGrowth !==
+          undefined) {
+          <span class="movement-badge" [ngClass]="getChangeClass(cashflow.summary.yoYChange.netCashFlowGrowth)">
+            <span class="arrow">{{ getArrow(cashflow.summary.yoYChange.netCashFlowGrowth) }}</span>
+            {{ formatPercent(cashflow.summary.yoYChange.netCashFlowGrowth) }} YoY
+          </span>
           }
         </div>
 
         <div class="card-value-row">
-          <span class="holding-value capex-value">{{ formatCurrency(current.capex) }}</span>
-        </div>
-
-        <div class="card-formula-row">
-          @if (current.capexToCfoPercent !== null && current.capexToCfoPercent !== undefined) {
-            <span class="sub-metric">Reinvestment Rate: <strong>{{ current.capexToCfoPercent.toFixed(1) }}% of CFO</strong></span>
+          @if (current.netCashFlow !== null && current.netCashFlow !== undefined) {
+          <span class="holding-value net-value" [ngClass]="getChangeClass(current.netCashFlow)">
+            {{ formatCurrency(current.netCashFlow) }}
+          </span>
           } @else {
-            <span class="sub-metric">Capital Allocation</span>
+          <span class="holding-value neutral">—</span>
           }
         </div>
 
+        <div class="card-formula-row">
+          <span class="formula-tag">CFO + CFI + CFF</span>
+          <span class="sub-metric">Total Net Change in Cash</span>
+        </div>
+
         <div class="mini-progress-track">
-          <div class="mini-progress-fill capex-fill" [style.width.%]="getBarHeightPercentage(current.capex, getMaxOperatingCashFlow())"></div>
+          <div class="mini-progress-fill net-fill"
+            [style.width.%]="getBarHeightPercentage(current.netCashFlow, getMaxOperatingCashFlow())"></div>
         </div>
       </div>
 
-      <!-- 4. CFO vs Net Profit Performance & Reserves Card -->
-      <div class="metric-card profit-card">
+      <!-- 4. CFO / OP Card -->
+      <div class="metric-card ratio-card">
         <div class="card-top">
           <div class="category-header">
-            <span class="category-indicator profit-dot"></span>
-            <span class="category-title">Net Profit & Reserves</span>
+            <span class="category-indicator ratio-dot"></span>
+            <span class="category-title">CFO / OP (EBITDA)</span>
           </div>
-          @if (cashflow.summary.yoYChange.netProfitGrowth !== null && cashflow.summary.yoYChange.netProfitGrowth !== undefined && !selectedHistoricalPeriod()) {
-            <span class="movement-badge" [ngClass]="getChangeClass(cashflow.summary.yoYChange.netProfitGrowth)">
-              <span class="arrow">{{ getArrow(cashflow.summary.yoYChange.netProfitGrowth) }}</span>
-              {{ formatPercent(cashflow.summary.yoYChange.netProfitGrowth) }} YoY
-            </span>
+          @if (current.cfoToOperatingProfitRatio !== null && current.cfoToOperatingProfitRatio !== undefined) {
+          <span class="quality-badge" [class.high]="current.cfoToOperatingProfitRatio >= 0.8">
+            {{ current.cfoToOperatingProfitRatio >= 0.8 ? 'High Conversion' : 'Moderate' }}
+          </span>
           }
         </div>
 
         <div class="card-value-row">
-          <span class="holding-value profit-value">{{ formatCurrency(current.netProfit) }}</span>
-          @if (current.eps !== null && current.eps !== undefined) {
-            <span class="eps-pill">EPS: {{ formatEps(current.eps) }}</span>
-          }
+          <span class="holding-value ratio-value">
+            {{ current.cfoToOperatingProfitRatio !== null && current.cfoToOperatingProfitRatio !== undefined ?
+            formatRatio(current.cfoToOperatingProfitRatio) : '—' }}
+          </span>
         </div>
 
         <div class="card-formula-row">
-          @if (current.otherEquity !== null && current.otherEquity !== undefined) {
-            <span class="reserves-tag" title="Ind-AS Reserves + Retained Earnings (Altman Z-Score)">
-              Other Equity: <strong>{{ formatCurrency(current.otherEquity) }}</strong>
-            </span>
-          } @else {
-            <span class="sub-metric">Annual Bottomline</span>
-          }
+          <span class="formula-tag">CFO ÷ EBITDA</span>
+          <span class="sub-metric">{{ current.cfoToOperatingProfitRatio && current.cfoToOperatingProfitRatio >= 0.8 ?
+            'Strong EBITDA Conversion' : 'Operating Cash Conversion' }}</span>
         </div>
 
         <div class="mini-progress-track">
-          <div class="mini-progress-fill profit-fill" [style.width.%]="getBarHeightPercentage(current.netProfit, getMaxOperatingCashFlow())"></div>
+          <div class="mini-progress-fill ratio-fill"
+            [style.width.%]="getRatioProgressPercentage(current.cfoToOperatingProfitRatio)"></div>
         </div>
       </div>
     </div>
-
-    <!-- Net Cashflow Dynamic Feature Strip -->
-    <div class="net-cashflow-banner">
-      <div class="net-cashflow-left">
-        <div class="net-icon-circle">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="net-svg">
-            <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-          </svg>
-        </div>
-        <div class="net-info">
-          <div class="net-title-row">
-            <span class="net-title">Net Cash Flow (All Activities)</span>
-            @if (current.netCashFlow === null || current.netCashFlow === undefined) {
-              <span class="pending-badge">Pending Final XBRL Breakdown</span>
-            } @else {
-              <span class="status-pill-live">✓ Reported</span>
-            }
-          </div>
-          <p class="net-subtitle">
-            Combines Cash from Operations, Capital Investments, and Financing Flows.
-          </p>
-        </div>
-      </div>
-
-      <div class="net-cashflow-right">
-        @if (current.netCashFlow !== null && current.netCashFlow !== undefined) {
-          <div class="net-val-group">
-            <span class="net-amount" [ngClass]="getChangeClass(current.netCashFlow)">
-              {{ formatCurrency(current.netCashFlow) }}
-            </span>
-            @if (cashflow.summary.yoYChange.netCashFlowGrowth !== null && cashflow.summary.yoYChange.netCashFlowGrowth !== undefined && !selectedHistoricalPeriod()) {
-              <span class="movement-badge" [ngClass]="getChangeClass(cashflow.summary.yoYChange.netCashFlowGrowth)">
-                {{ formatPercent(cashflow.summary.yoYChange.netCashFlowGrowth) }} YoY
-              </span>
-            }
-          </div>
-        } @else {
-          <div class="net-placeholder-group">
-            <span class="net-amount neutral">—</span>
-            <span class="net-fallback-note">Awaiting schema release from BharatStock</span>
-          </div>
-        }
-      </div>
-    </div>
-
-    <!-- Historical Multi-Year Statements Table -->
-    @if (cashflow.history && cashflow.history.length > 0) {
-      <div class="history-section">
-        <div class="section-title-row">
-          <h3 class="section-heading">Annual Financial Statement & Cash Flow History</h3>
-          <span class="history-count">3-Year XBRL Filings</span>
-        </div>
-
-        <div class="history-table-wrapper">
-          <table class="history-table">
-            <thead>
-              <tr>
-                <th>Fiscal Year</th>
-                <th>Period End</th>
-                <th>Revenue</th>
-                <th>Operating Cash Flow (CFO)</th>
-                <th>Capex</th>
-                <th>Free Cash Flow (FCF)</th>
-                <th>Net Cash Flow</th>
-                <th>Net Profit</th>
-                <th>EPS</th>
-                <th>CFO / NP</th>
-                <th>Other Equity</th>
-                <th>Type</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (item of cashflow.history.slice(0, 3); track item.fiscalYear) {
-                <tr 
-                  [class.active-row]="current.fiscalYear === item.fiscalYear"
-                  (click)="selectPeriod(item)"
-                >
-                  <td class="quarter-cell">
-                    <span class="quarter-name">{{ item.fiscalYear }}</span>
-                    @if (item.fiscalYear === cashflow.latestFiscalYear) {
-                      <span class="latest-chip">Latest</span>
-                    }
-                  </td>
-                  <td class="date-cell">{{ item.dataAsOf || item.periodEndDate || '—' }}</td>
-                  <td class="value-cell">{{ formatCurrency(item.revenue) }}</td>
-                  <td class="value-cell cfo-text">{{ formatCurrency(item.operatingCashFlow) }}</td>
-                  <td class="value-cell capex-text">{{ formatCurrency(item.capex) }}</td>
-                  <td class="value-cell fcf-text font-bold">{{ formatCurrency(item.freeCashFlow) }}</td>
-                  <td class="value-cell">
-                    @if (item.netCashFlow !== null && item.netCashFlow !== undefined) {
-                      <span [ngClass]="getChangeClass(item.netCashFlow)">{{ formatCurrency(item.netCashFlow) }}</span>
-                    } @else {
-                      <span class="neutral">—</span>
-                    }
-                  </td>
-                  <td class="value-cell profit-text">{{ formatCurrency(item.netProfit) }}</td>
-                  <td class="value-cell">{{ formatEps(item.eps) }}</td>
-                  <td class="value-cell">
-                    @if (item.cfoToNetProfitRatio !== null && item.cfoToNetProfitRatio !== undefined) {
-                      <span [class.high-ratio]="item.cfoToNetProfitRatio >= 1.0">{{ formatRatio(item.cfoToNetProfitRatio) }}</span>
-                    } @else {
-                      <span>—</span>
-                    }
-                  </td>
-                  <td class="value-cell">{{ formatCurrency(item.otherEquity) }}</td>
-                  <td class="type-cell">
-                    <span class="type-tag">{{ item.consolidationType || 'Consolidated' }}</span>
-                  </td>
-                  <td class="action-cell">
-                    <button 
-                      type="button" 
-                      class="view-quarter-btn"
-                      [class.selected]="current.fiscalYear === item.fiscalYear"
-                    >
-                      {{ current.fiscalYear === item.fiscalYear ? 'Viewing' : 'Inspect' }}
-                    </button>
-                  </td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-      </div>
-    }
+  </div>
   }
 </div>

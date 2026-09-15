@@ -15,6 +15,34 @@ export interface CashflowYoYChange {
   netCashFlowGrowth?: number | null; // YoY %
 }
 
+export interface StockRatios {
+  roe?: number | null;
+  roce?: number | null;
+  peRatio?: number | null;
+  ttmEps?: number | null;
+  pbRatio?: number | null;
+  dividendYield?: number | null;
+  week52High?: number | null;
+  week52Low?: number | null;
+  currentPrice?: number | null;
+  asOfDate?: string | null;
+  financialsPeriodType?: string | null;
+  financialsFiscalYear?: string | null;
+  faceValue?: number | null;
+  equityCapital?: number | null;
+  totalShares?: number | null;
+  totalEquity?: number | null;
+  totalEquityPeriod?: string | null;
+  totalEquitySource?: string | null;
+  bookValue?: number | null;
+  marketCap?: number | null;
+  marketCapSource?: string | null;
+  sectorPe?: number | null;
+  sectorPeSector?: string | null;
+  sectorPeAsOfDate?: string | null;
+}
+
+
 export interface CashflowSummary {
   fiscalYear: string;
   periodEndDate?: string | null;
@@ -23,38 +51,18 @@ export interface CashflowSummary {
   freeCashFlow?: number | null;
   netCashFlow?: number | null;
   revenue?: number | null;
+  operatingProfit?: number | null;
   netProfit?: number | null;
   eps?: number | null;
   otherEquity?: number | null;
+  totalEquity?: number | null;
+  cfoToOperatingProfitRatio?: number | null;
   cfoToNetProfitRatio?: number | null;
   fcfMarginPercent?: number | null;
   capexToCfoPercent?: number | null;
   consolidationType?: string | null;
+  ratios?: StockRatios | null;
   yoYChange: CashflowYoYChange;
-}
-
-export interface AnnualCashflowItem {
-  id: number;
-  fiscalYear: string;
-  periodKey?: string;
-  periodEndDate?: string | null;
-  dataAsOf?: string | null;
-  periodType: string;
-  revenue?: number | null;
-  netProfit?: number | null;
-  eps?: number | null;
-  netProfitAttributableToMinorityInterest?: number | null;
-  otherEquity?: number | null;
-  operatingCashFlow?: number | null;
-  capex?: number | null;
-  freeCashFlow?: number | null;
-  netCashFlow?: number | null;
-  cfoToNetProfitRatio?: number | null;
-  fcfMarginPercent?: number | null;
-  capexToCfoPercent?: number | null;
-  consolidationType?: string | null;
-  source: string;
-  lastSyncedAt: string;
 }
 
 export interface StockCashflowResponse {
@@ -67,5 +75,6 @@ export interface StockCashflowResponse {
   source: string;
   lastSyncedAt: string;
   summary: CashflowSummary;
-  history: AnnualCashflowItem[];
+  ratios?: StockRatios | null;
 }
+

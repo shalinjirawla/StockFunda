@@ -246,6 +246,10 @@ namespace StockLens_Infrastructure.DataContext
                     .HasPrecision(18, 2)
                     .IsRequired(false);
 
+                entity.Property(f => f.OperatingProfit)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
                 entity.Property(f => f.NetProfit)
                     .HasPrecision(18, 2)
                     .IsRequired(false);
@@ -280,6 +284,62 @@ namespace StockLens_Infrastructure.DataContext
 
                 entity.Property(f => f.ConsolidationType)
                     .HasMaxLength(50);
+
+                entity.Property(f => f.Roe)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.Roce)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.PeRatio)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.PbRatio)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.DividendYield)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.Week52High)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.Week52Low)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.CurrentPrice)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.RatiosAsOfDate)
+                    .HasMaxLength(50)
+                    .IsRequired(false);
+
+                entity.Property(f => f.FaceValue)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.TotalEquity)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.BookValue)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.MarketCap)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
+                entity.Property(f => f.SectorPe)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
 
                 entity.Property(f => f.Source)
                     .HasMaxLength(100)

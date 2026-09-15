@@ -1,16 +1,15 @@
 import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { StockCashflowResponse, StockRatios, LoadingState } from '../../models/stock-cashflow.model';
-import { TimeAgoPipe } from '../../pipes/time-ago.pipe';
 
 @Component({
-  selector: 'app-stock-cashflow-card',
+  selector: 'app-stock-ratios-valuation-card',
   standalone: true,
-  imports: [CommonModule, TimeAgoPipe],
-  templateUrl: './stock-cashflow-card.component.html',
-  styleUrl: './stock-cashflow-card.component.css'
+  imports: [CommonModule],
+  templateUrl: './stock-ratios-valuation-card.component.html',
+  styleUrl: './stock-ratios-valuation-card.component.css'
 })
-export class StockCashflowCardComponent {
+export class StockRatiosValuationCardComponent {
   @Input() cashflow: StockCashflowResponse | null = null;
   @Input() loadingState: LoadingState = 'idle';
   @Input() errorMessage: string = '';
@@ -18,43 +17,10 @@ export class StockCashflowCardComponent {
 
   @Output() refreshRequested = new EventEmitter<void>();
 
-  /**
-   * Returns the actively displayed annual financial summary.
-   */
-  get activePeriod(): {
-    fiscalYear: string;
-    periodEndDate?: string | null;
-    dataAsOf?: string | null;
-    operatingCashFlow?: number | null;
-    capex?: number | null;
-    freeCashFlow?: number | null;
-    netCashFlow?: number | null;
-    revenue?: number | null;
-    operatingProfit?: number | null;
-    netProfit?: number | null;
-    eps?: number | null;
-    otherEquity?: number | null;
-    totalEquity?: number | null;
-    cfoToOperatingProfitRatio?: number | null;
-    cfoToNetProfitRatio?: number | null;
-    fcfMarginPercent?: number | null;
-    capexToCfoPercent?: number | null;
-    consolidationType?: string | null;
-    ratios?: StockRatios | null;
-  } | null {
-    if (this.cashflow?.summary) {
-      return {
-        ...this.cashflow.summary,
-        dataAsOf: this.cashflow.dataAsOf,
-        ratios: this.cashflow.summary.ratios || this.cashflow.ratios
-      };
-    }
-    return null;
+  get current() {
+    return this.cashflow?.summary;
   }
 
-  /**
-   * Returns the valuation and profitability ratios.
-   */
   get ratios(): StockRatios | null {
     return this.cashflow?.summary?.ratios || this.cashflow?.ratios || null;
   }
@@ -70,12 +36,8 @@ export class StockCashflowCardComponent {
 
     const isNegative = value < 0;
     const absVal = Math.abs(value);
-
-    // If value is raw rupees (e.g. 691970000000), convert to Crores (691970000000 / 10,000,000 = 69,197 Cr)
-    // 1 Crore = 10,000,000 (10^7)
     const valInCrores = absVal >= 10_000_000 ? absVal / 10_000_000 : absVal;
 
-    // Format with Indian numbering system (Crores)
     const formatted = new Intl.NumberFormat('en-IN', {
       maximumFractionDigits: 2,
       minimumFractionDigits: 0
@@ -94,12 +56,6 @@ export class StockCashflowCardComponent {
     }).format(value);
   }
 
-  formatPercent(value: number | null | undefined): string {
-    if (value === null || value === undefined) return '—';
-    const sign = value > 0 ? '+' : '';
-    return `${sign}${value.toFixed(2)}%`;
-  }
-
   formatPercentage(value: number | null | undefined): string {
     if (value === null || value === undefined) return '—';
     return `${value.toFixed(2)}%`;
@@ -108,57 +64,6 @@ export class StockCashflowCardComponent {
   formatRatio(value: number | null | undefined): string {
     if (value === null || value === undefined) return '—';
     return `${value.toFixed(2)}x`;
-  }
-
-  getChangeClass(value: number | null | undefined): string {
-    if (value === null || value === undefined) return 'neutral';
-    if (value > 0) return 'positive';
-    if (value < 0) return 'negative';
-    return 'neutral';
-  }
-
-  getArrow(value: number | null | undefined): string {
-    if (value === null || value === undefined) return '';
-    if (value > 0) return '▲';
-    if (value < 0) return '▼';
-    return '—';
-  }
-
-  getBarHeightPercentage(value: number | null | undefined, maxReference: number): number {
-    if (!value || maxReference <= 0) return 4;
-    const absVal = Math.abs(value);
-    const valInCrores = absVal >= 10_000_000 ? absVal / 10_000_000 : absVal;
-    const maxInCrores = maxReference >= 10_000_000 ? maxReference / 10_000_000 : maxReference;
-    const pct = Math.round((valInCrores / maxInCrores) * 100);
-    return Math.min(100, Math.max(6, pct));
-  }
-
-  getMaxOperatingCashFlow(): number {
-    if (!this.cashflow?.summary) return 1;
-    let max = 1;
-    const cfo = this.cashflow.summary.operatingCashFlow;
-    if (cfo) {
-      const absVal = Math.abs(cfo);
-      const inCr = absVal >= 10_000_000 ? absVal / 10_000_000 : absVal;
-      if (inCr > max) {
-        max = inCr;
-      }
-    }
-    const rev = this.cashflow.summary.revenue;
-    if (rev) {
-      const absVal = Math.abs(rev);
-      const inCr = absVal >= 10_000_000 ? absVal / 10_000_000 : absVal;
-      if (inCr > max) {
-        max = inCr;
-      }
-    }
-    return max;
-  }
-
-  getRatioProgressPercentage(ratio: number | null | undefined): number {
-    if (!ratio || ratio <= 0) return 4;
-    const pct = Math.round((ratio / 2.0) * 100);
-    return Math.min(100, Math.max(8, pct));
   }
 
   getRoeProgress(roe: number | null | undefined): number {
@@ -215,11 +120,72 @@ export class StockCashflowCardComponent {
     return Math.min(100, Math.max(15, pct));
   }
 
+  getEffectiveShares(): number | null {
+    if (this.ratios?.totalShares !== undefined && this.ratios?.totalShares !== null) {
+      return this.ratios.totalShares;
+    }
+    const eqCap = this.ratios?.equityCapital;
+    const fv = this.ratios?.faceValue;
+    if (eqCap && fv && fv > 0) {
+      return eqCap / fv;
+    }
+    return null;
+  }
+
+  getEffectiveMarketCap(): number | null {
+    if (this.ratios?.marketCap !== undefined && this.ratios?.marketCap !== null) {
+      return this.ratios.marketCap;
+    }
+    const shares = this.getEffectiveShares();
+    const price = this.ratios?.currentPrice;
+    if (shares && price && price > 0) {
+      return shares * price;
+    }
+    return null;
+  }
+
+  formatShares(value: number | null | undefined): string {
+    if (value === null || value === undefined) return '—';
+    const formatted = new Intl.NumberFormat('en-IN', {
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 2
+    }).format(value);
+    return `${formatted} Cr`;
+  }
+
+  getMarketCapFormulaTag(): string {
+    const shares = this.getEffectiveShares();
+    if (shares) {
+      return '(Equity Cap ÷ Face Value) × Price';
+    }
+    return 'Price × Outstanding Shares';
+  }
+
+  getMarketCapSubMetric(): string {
+    const shares = this.getEffectiveShares();
+    const price = this.ratios?.currentPrice;
+    if (shares && price) {
+      return `${this.formatShares(shares)} shares @ ${this.formatPrice(price)}`;
+    }
+    return 'Market Capitalization';
+  }
+
+  getMarketCapTooltip(): string {
+    const eqCap = this.ratios?.equityCapital;
+    const fv = this.ratios?.faceValue;
+    const shares = this.getEffectiveShares();
+    const price = this.ratios?.currentPrice;
+    const mc = this.getEffectiveMarketCap();
+
+    if (eqCap && fv && shares && price && mc) {
+      return `Total Shares = Equity Capital (₹${eqCap} Cr) ÷ Face Value (₹${fv}) = ${this.formatShares(shares)} shares\nMarket Cap = ${this.formatShares(shares)} × ${this.formatPrice(price)} = ${this.formatCurrency(mc)}`;
+    }
+    return this.ratios?.marketCapSource || 'Market Capitalization = Outstanding Shares × Current Price';
+  }
+
   getSectorPeProgress(pe: number | null | undefined): number {
     if (!pe || pe <= 0) return 40;
     const pct = Math.round((pe / 50.0) * 100);
     return Math.min(100, Math.max(10, pct));
   }
 }
-
-

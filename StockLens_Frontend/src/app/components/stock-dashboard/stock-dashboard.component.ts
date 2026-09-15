@@ -15,10 +15,11 @@ import { StockShareholdingCardComponent } from '../stock-shareholding-card/stock
 import { StockCashflowCardComponent } from '../stock-cashflow-card/stock-cashflow-card.component';
 import { StockAssetGrowthCardComponent } from '../stock-asset-growth-card/stock-asset-growth-card.component';
 import { StockPriceChartComponent } from '../stock-price-chart/stock-price-chart.component';
+import { StockRatiosValuationCardComponent } from '../stock-ratios-valuation-card/stock-ratios-valuation-card.component';
 import { BalanceSheetResponseDto } from '../../services/stock-balancesheet.service';
 import { TimeAgoPipe } from '../../pipes/time-ago.pipe';
 
-export type DashboardTab = 'cashflow' | 'shareholding' | 'news' | 'assets' | 'prices';
+export type DashboardTab = 'prices' | 'ratios' | 'cashflow' | 'assets' | 'shareholding' | 'news';
 
 @Component({
   selector: 'app-stock-dashboard',
@@ -31,6 +32,7 @@ export type DashboardTab = 'cashflow' | 'shareholding' | 'news' | 'assets' | 'pr
     StockCashflowCardComponent,
     StockAssetGrowthCardComponent,
     StockPriceChartComponent,
+    StockRatiosValuationCardComponent,
     TimeAgoPipe
   ],
   templateUrl: './stock-dashboard.component.html',
@@ -52,13 +54,14 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     { symbol: 'ICICIBANK', name: 'ICICI Bank', exchange: 'NSE' }
   ];
 
-  activeTab = signal<DashboardTab>('prices');
+  activeTab = signal<DashboardTab>('ratios');
   availableStocks = signal<Stock[]>([]);
   selectedSymbol = signal<string>('RELIANCE');
   selectedExchange = signal<string>('NSE');
   searchQuery = signal<string>('');
 
   // Track loaded symbol per tab to enable on-demand lazy loading
+  private loadedRatiosSymbol: string = '';
   private loadedShareholdingSymbol: string = '';
   private loadedCashflowSymbol: string = '';
   private loadedNewsSymbol: string = '';
@@ -141,14 +144,16 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
   setTab(tab: DashboardTab): void {
     this.activeTab.set(tab);
     const currentSymbol = this.selectedSymbol();
-    if (tab === 'shareholding' && this.loadedShareholdingSymbol !== currentSymbol) {
-      this.fetchShareholding(false);
+    if (tab === 'ratios' && this.loadedRatiosSymbol !== currentSymbol) {
+      this.fetchCashflow(false);
     } else if (tab === 'cashflow' && this.loadedCashflowSymbol !== currentSymbol) {
       this.fetchCashflow(false);
-    } else if (tab === 'news' && this.loadedNewsSymbol !== currentSymbol) {
-      this.fetchNews(false);
     } else if (tab === 'assets' && this.loadedAssetsSymbol !== currentSymbol) {
       this.fetchBalanceSheet(false);
+    } else if (tab === 'shareholding' && this.loadedShareholdingSymbol !== currentSymbol) {
+      this.fetchShareholding(false);
+    } else if (tab === 'news' && this.loadedNewsSymbol !== currentSymbol) {
+      this.fetchNews(false);
     }
   }
 
@@ -161,8 +166,10 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     this.searchResults.set([]);
 
     // Invalidate per-tab caches for the old symbol
+    this.loadedRatiosSymbol = '';
     this.loadedShareholdingSymbol = '';
     this.loadedCashflowSymbol = '';
+    this.loadedAssetsSymbol = '';
     this.loadedNewsSymbol = '';
 
     // Fetch ONLY the currently active tab's data
@@ -174,8 +181,10 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
       this.selectedExchange.set(exchange);
       this.searchQuery.set('');
       this.searchResults.set([]);
+      this.loadedRatiosSymbol = '';
       this.loadedShareholdingSymbol = '';
       this.loadedCashflowSymbol = '';
+      this.loadedAssetsSymbol = '';
       this.loadedNewsSymbol = '';
       this.fetchActiveTabData(false);
     }
@@ -192,8 +201,10 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     if (query) {
       this.selectedSymbol.set(query.toUpperCase());
       this.searchResults.set([]);
+      this.loadedRatiosSymbol = '';
       this.loadedShareholdingSymbol = '';
       this.loadedCashflowSymbol = '';
+      this.loadedAssetsSymbol = '';
       this.loadedNewsSymbol = '';
       this.fetchActiveTabData(false);
     }
@@ -206,12 +217,12 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
   }
 
   fetchActiveTabData(isRefresh: boolean): void {
-    if (this.activeTab() === 'shareholding') {
-      this.fetchShareholding(isRefresh);
-    } else if (this.activeTab() === 'cashflow') {
+    if (this.activeTab() === 'ratios' || this.activeTab() === 'cashflow') {
       this.fetchCashflow(isRefresh);
     } else if (this.activeTab() === 'assets') {
       this.fetchBalanceSheet(isRefresh);
+    } else if (this.activeTab() === 'shareholding') {
+      this.fetchShareholding(isRefresh);
     } else if (this.activeTab() === 'news') {
       this.fetchNews(isRefresh);
     }
@@ -294,7 +305,8 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
         this.cashflowResponse.set(data);
         this.isCashflowRefreshing.set(false);
         this.loadedCashflowSymbol = symbol;
-        if (data.summary && data.history && data.history.length > 0) {
+        this.loadedRatiosSymbol = symbol;
+        if (data && data.summary) {
           this.cashflowLoadingState.set('success');
         } else {
           this.cashflowLoadingState.set('empty');

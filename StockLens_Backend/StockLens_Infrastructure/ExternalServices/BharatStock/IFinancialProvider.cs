@@ -13,5 +13,27 @@ namespace StockLens_Infrastructure.ExternalServices.BharatStock
             int page = 1,
             int pageSize = 10,
             CancellationToken cancellationToken = default);
+
+        Task<BharatStockRatiosRecord?> GetRatiosAsync(
+            string ticker,
+            CancellationToken cancellationToken = default);
+
+        Task<BharatStockCompanyDetailsRecord?> GetStockDetailsAsync(
+            string ticker,
+            string? exchange = "NSE",
+            CancellationToken cancellationToken = default);
+
+        Task<BharatStockScreenerRecord?> GetScreenerDataAsync(
+            string ticker,
+            string? exchange = "NSE",
+            CancellationToken cancellationToken = default);
+
+        Task<IReadOnlyList<BharatStockScreenerRecord>> GetScreenerBySectorAsync(
+            string sector,
+            string? exchange = "NSE",
+            int page = 1,
+            int pageSize = 200,
+            CancellationToken cancellationToken = default);
     }
 }
+

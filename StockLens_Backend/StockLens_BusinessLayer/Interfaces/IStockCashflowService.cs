@@ -16,5 +16,9 @@ namespace StockLens_BusinessLayer.Interfaces
             string? exchange = "NSE",
             bool forceRefresh = false,
             CancellationToken cancellationToken = default);
+
+        Task<StockRatiosDto?> GetRatiosBySymbolAsync(
+            string symbol,
+            CancellationToken cancellationToken = default);
     }
 }

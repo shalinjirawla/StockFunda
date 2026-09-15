@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using StockLens_Infrastructure.DataContext;
 
@@ -11,9 +12,11 @@ using StockLens_Infrastructure.DataContext;
 namespace StockLens_Infrastructure.Migrations
 {
     [DbContext(typeof(StockLensDataContext))]
-    partial class StockLensDataContextModelSnapshot : ModelSnapshot
+    [Migration("20260911084542_UpdateStockFinancial")]
+    partial class UpdateStockFinancial
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -177,7 +180,7 @@ namespace StockLens_Infrastructure.Migrations
 
                     b.HasIndex("StockId");
 
-                    b.ToTable("StockBalanceSheets", (string)null);
+                    b.ToTable("StockBalanceSheets");
                 });
 
             modelBuilder.Entity("StockLens_DataLayer.Entities.StockFinancial", b =>
@@ -187,10 +190,6 @@ namespace StockLens_Infrastructure.Migrations
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<decimal?>("BookValue")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
 
                     b.Property<decimal?>("Capex")
                         .HasPrecision(18, 2)
@@ -215,10 +214,6 @@ namespace StockLens_Infrastructure.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
-                    b.Property<decimal?>("FaceValue")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
                     b.Property<string>("FiscalYear")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -230,10 +225,6 @@ namespace StockLens_Infrastructure.Migrations
 
                     b.Property<DateTime>("LastSyncedAt")
                         .HasColumnType("datetime2");
-
-                    b.Property<decimal?>("MarketCap")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
 
                     b.Property<decimal?>("NetCashFlow")
                         .HasPrecision(18, 2)
@@ -296,10 +287,6 @@ namespace StockLens_Infrastructure.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
-                    b.Property<decimal?>("SectorPe")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
                     b.Property<string>("Source")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -307,10 +294,6 @@ namespace StockLens_Infrastructure.Migrations
 
                     b.Property<int>("StockId")
                         .HasColumnType("int");
-
-                    b.Property<decimal?>("TotalEquity")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -412,62 +395,6 @@ namespace StockLens_Infrastructure.Migrations
                         .HasDatabaseName("IX_StockNews_StockId_SourceUrl");
 
                     b.ToTable("StockNews", (string)null);
-                });
-
-            modelBuilder.Entity("StockLens_DataLayer.Entities.StockPriceHistory", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<decimal>("Close")
-                        .HasPrecision(18, 4)
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime>("Date")
-                        .HasColumnType("datetime2");
-
-                    b.Property<decimal>("High")
-                        .HasPrecision(18, 4)
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<DateTime>("LastSyncedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<decimal>("Low")
-                        .HasPrecision(18, 4)
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<decimal>("Open")
-                        .HasPrecision(18, 4)
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<string>("Source")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<int>("StockId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<long>("Volume")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("StockId", "Date")
-                        .IsUnique()
-                        .HasDatabaseName("IX_StockPriceHistories_StockId_Date");
-
-                    b.ToTable("StockPriceHistories", (string)null);
                 });
 
             modelBuilder.Entity("StockLens_DataLayer.Entities.StockShareholding", b =>
@@ -591,17 +518,6 @@ namespace StockLens_Infrastructure.Migrations
                 {
                     b.HasOne("StockLens_DataLayer.Entities.Stock", "Stock")
                         .WithMany("News")
-                        .HasForeignKey("StockId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Stock");
-                });
-
-            modelBuilder.Entity("StockLens_DataLayer.Entities.StockPriceHistory", b =>
-                {
-                    b.HasOne("StockLens_DataLayer.Entities.Stock", "Stock")
-                        .WithMany()
                         .HasForeignKey("StockId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();

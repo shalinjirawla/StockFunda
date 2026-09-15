@@ -127,5 +127,45 @@ namespace StockLens_API.Controllers
                 });
             }
         }
+
+        /// <summary>
+        /// Retrieves valuation and profitability ratios (ROE, ROCE, P/E, 52W High, 52W Low) for a given stock symbol.
+        /// </summary>
+        /// <param name="symbol">Stock ticker symbol (e.g. RELIANCE, TCS, INFY).</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        [HttpGet("ratios")]
+        [ProducesResponseType(typeof(StockRatiosDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<IActionResult> GetRatios(
+            [FromQuery] string symbol,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(symbol))
+            {
+                return BadRequest(new { message = "The 'symbol' query parameter is required." });
+            }
+
+            try
+            {
+                var ratios = await _cashflowService.GetRatiosBySymbolAsync(symbol, cancellationToken);
+                if (ratios == null)
+                {
+                    return NotFound(new { message = $"Ratios data not found for ticker '{symbol}'." });
+                }
+
+                return Ok(ratios);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, new
+                {
+                    message = "An error occurred while retrieving valuation ratios.",
+                    detail = ex.Message
+                });
+            }
+        }
     }
 }
+

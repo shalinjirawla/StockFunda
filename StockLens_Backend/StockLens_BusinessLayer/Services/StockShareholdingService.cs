@@ -121,10 +121,17 @@ namespace StockLens_BusinessLayer.Services
         {
             var existingEntities = await _shareholdingRepository.GetShareholdingsByStockIdAsync(stock.Id, 12);
 
-            if (!forceRefresh && existingEntities.Count > 0)
+            bool isFresh = false;
+            if (existingEntities.Count > 0)
             {
-                _logger.LogInformation("Serving {Count} shareholding records from DB cache for stock {Symbol} (StockId: {StockId}).",
-                    existingEntities.Count, stock.Symbol, stock.Id);
+                var lastSync = existingEntities.Max(e => e.LastSyncedAt);
+                isFresh = (DateTime.UtcNow - lastSync).TotalDays < 7;
+            }
+
+            if (!forceRefresh && existingEntities.Count > 0 && isFresh)
+            {
+                _logger.LogInformation("Serving {Count} shareholding records from DB cache for stock {Symbol} (StockId: {StockId}, LastSynced: {LastSynced}).",
+                    existingEntities.Count, stock.Symbol, stock.Id, existingEntities.Max(e => e.LastSyncedAt));
                 return BuildResponseDto(stock, existingEntities);
             }
 
@@ -140,7 +147,11 @@ namespace StockLens_BusinessLayer.Services
                     existingEntities = await _shareholdingRepository.GetShareholdingsByStockIdAsync(stock.Id, 12);
                     if (existingEntities.Count > 0)
                     {
-                        return BuildResponseDto(stock, existingEntities);
+                        var lastSync = existingEntities.Max(e => e.LastSyncedAt);
+                        if ((DateTime.UtcNow - lastSync).TotalDays < 7)
+                        {
+                            return BuildResponseDto(stock, existingEntities);
+                        }
                     }
                 }
 
