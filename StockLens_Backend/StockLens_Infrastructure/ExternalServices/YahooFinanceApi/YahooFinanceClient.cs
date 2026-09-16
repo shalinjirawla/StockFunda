@@ -184,10 +184,10 @@ namespace StockLens_Infrastructure.ExternalServices.YahooFinanceApi
                     resultArr.GetArrayLength() > 0)
                 {
                     var firstRes = resultArr[0];
+                    var quote = new YahooLiveQuoteDto { Symbol = cleanSymbol };
+
                     if (firstRes.TryGetProperty("meta", out var meta))
                     {
-                        var quote = new YahooLiveQuoteDto { Symbol = cleanSymbol };
-
                         if (meta.TryGetProperty("regularMarketPrice", out var p) && p.TryGetDecimal(out var price)) quote.Price = price;
                         else if (meta.TryGetProperty("fulldayPrice", out var fp) && fp.TryGetDecimal(out var fprice)) quote.Price = fprice;
 
@@ -196,13 +196,35 @@ namespace StockLens_Infrastructure.ExternalServices.YahooFinanceApi
                         if (meta.TryGetProperty("fiftyTwoWeekHigh", out var yh) && yh.TryGetDecimal(out var yearHigh)) quote.YearHigh = yearHigh;
                         if (meta.TryGetProperty("fiftyTwoWeekLow", out var yl) && yl.TryGetDecimal(out var yearLow)) quote.YearLow = yearLow;
                         if (meta.TryGetProperty("previousClose", out var pc) && pc.TryGetDecimal(out var prevClose)) quote.PreviousClose = prevClose;
+                        else if (meta.TryGetProperty("chartPreviousClose", out var cpc) && cpc.TryGetDecimal(out var chartPrevClose)) quote.PreviousClose = chartPrevClose;
                         if (meta.TryGetProperty("regularMarketChangePercent", out var cp) && cp.TryGetDecimal(out var changePercent)) quote.ChangePercent = changePercent;
                         if (meta.TryGetProperty("regularMarketVolume", out var v) && v.TryGetInt64(out var vol)) quote.Volume = vol;
+                    }
 
-                        if (quote.Price.HasValue && quote.Price.Value > 0)
+                    // Fallback to latest close indicator if regularMarketPrice is missing
+                    if (!quote.Price.HasValue &&
+                        firstRes.TryGetProperty("indicators", out var indObj) &&
+                        indObj.TryGetProperty("quote", out var qArr) &&
+                        qArr.ValueKind == JsonValueKind.Array &&
+                        qArr.GetArrayLength() > 0)
+                    {
+                        var q0 = qArr[0];
+                        if (q0.TryGetProperty("close", out var closeArr) && closeArr.ValueKind == JsonValueKind.Array)
                         {
-                            return quote;
+                            for (int i = closeArr.GetArrayLength() - 1; i >= 0; i--)
+                            {
+                                if (closeArr[i].TryGetDecimal(out var lastC) && lastC > 0)
+                                {
+                                    quote.Price = lastC;
+                                    break;
+                                }
+                            }
                         }
+                    }
+
+                    if (quote.Price.HasValue && quote.Price.Value > 0)
+                    {
+                        return quote;
                     }
                 }
             }

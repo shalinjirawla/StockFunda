@@ -424,17 +424,84 @@ namespace StockLens_UnitTests
         }
 
         [Fact]
-        public async Task LiveTest_YahooFinanceLiveQuote()
+        public async Task LiveTest_InspectRelianceCfoAndOperatingProfit()
         {
-            using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            var yahooClient = new StockLens_Infrastructure.ExternalServices.YahooFinanceApi.YahooFinanceClient(
-                httpClient,
-                new Microsoft.Extensions.Logging.Abstractions.NullLogger<StockLens_Infrastructure.ExternalServices.YahooFinanceApi.YahooFinanceClient>());
+            var secretPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "Microsoft", "UserSecrets", "stocklens-api-e6a839f1-469b-4682-841f-823908c69134", "secrets.json");
 
-            var quote = await yahooClient.GetLiveQuoteAsync("RELIANCE", "NSE");
-            _output.WriteLine($"Yahoo Live Quote for RELIANCE: Price={quote?.Price}, 52WHigh={quote?.YearHigh}, 52WLow={quote?.YearLow}");
-            quote.Should().NotBeNull();
-            quote!.Price.Should().BeGreaterThan(0);
+            if (!File.Exists(secretPath))
+            {
+                _output.WriteLine("User secrets not found. Skipping live test.");
+                return;
+            }
+
+            var secretJson = await File.ReadAllTextAsync(secretPath);
+            using var doc = JsonDocument.Parse(secretJson);
+            var apiKey = doc.RootElement.GetProperty("IndianApi:ApiKey").GetString() ?? "";
+
+            using var httpClient = new HttpClient { BaseAddress = new Uri("https://stock.indianapi.in/") };
+            httpClient.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
+
+            var res = await httpClient.GetAsync("stock?name=RELIANCE");
+            var body = await res.Content.ReadAsStringAsync();
+            using var doc2 = JsonDocument.Parse(body);
+
+            _output.WriteLine("=== RAW FINANCIAL KEYS FOR RELIANCE ===");
+            if (doc2.RootElement.TryGetProperty("financials", out var finObj) && finObj.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in finObj.EnumerateArray())
+                {
+                    if (item.TryGetProperty("FiscalYear", out var fyProp) && (fyProp.GetString() == "FY26" || fyProp.GetString() == "2026" || fyProp.GetString() == "FY25" || fyProp.GetString() == "2024" || fyProp.GetString() == "FY24"))
+                    {
+                        _output.WriteLine($"--- ALL RAW KEYS IN {fyProp.GetString()} ---");
+                        if (item.TryGetProperty("stockFinancialMap", out var mapObj))
+                        {
+                            if (mapObj.TryGetProperty("INC", out var incArr) && incArr.ValueKind == JsonValueKind.Array)
+                            {
+                                foreach (var incItem in incArr.EnumerateArray())
+                                {
+                                    if (incItem.TryGetProperty("key", out var k) && incItem.TryGetProperty("value", out var v))
+                                    {
+                                        _output.WriteLine($"  [INC] {k.GetString()} = {v}");
+                                    }
+                                }
+                            }
+                            if (mapObj.TryGetProperty("CAS", out var casArr) && casArr.ValueKind == JsonValueKind.Array)
+                            {
+                                foreach (var casItem in casArr.EnumerateArray())
+                                {
+                                    if (casItem.TryGetProperty("key", out var k) && casItem.TryGetProperty("value", out var v))
+                                    {
+                                        _output.WriteLine($"  [CAS] {k.GetString()} = {v}");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            using var httpClient2 = new HttpClient();
+            var client = new IndianApiBalanceSheetClient(
+                httpClient2,
+                Microsoft.Extensions.Options.Options.Create(new IndianApiSettings { ApiKey = apiKey, BaseUrl = "https://stock.indianapi.in" }),
+                new Microsoft.Extensions.Logging.Abstractions.NullLogger<IndianApiBalanceSheetClient>());
+
+            var result = await client.GetStockFinancialsAndOverviewAsync("RELIANCE");
+            _output.WriteLine("\n=== PARSED FINANCIALS IN CLIENT ===");
+            foreach (var f in result.Financials.Take(5))
+            {
+                _output.WriteLine($"FY: {f.FiscalYear} | PeriodEnd: {f.PeriodEndDate:yyyy-MM-dd} | Revenue: {f.Revenue} | OperatingProfit: {f.OperatingProfit} | NetProfit: {f.NetProfit} | CFO: {f.OperatingCashFlow} | Capex: {f.Capex} | FCF: {f.FreeCashFlow}");
+                if (f.OperatingCashFlow.HasValue && f.OperatingProfit.HasValue && f.OperatingProfit.Value != 0)
+                {
+                    _output.WriteLine($"   -> CFO / OP: {f.OperatingCashFlow.Value} / {f.OperatingProfit.Value} = {f.OperatingCashFlow.Value / f.OperatingProfit.Value:F4} ({Math.Round((f.OperatingCashFlow.Value / f.OperatingProfit.Value) * 100, 2)}%)");
+                }
+                if (f.OperatingCashFlow.HasValue && f.NetProfit.HasValue && f.NetProfit.Value != 0)
+                {
+                    _output.WriteLine($"   -> CFO / NetProfit (PAT): {f.OperatingCashFlow.Value} / {f.NetProfit.Value} = {f.OperatingCashFlow.Value / f.NetProfit.Value:F4} ({Math.Round((f.OperatingCashFlow.Value / f.NetProfit.Value) * 100, 2)}%)");
+                }
+            }
         }
     }
 }

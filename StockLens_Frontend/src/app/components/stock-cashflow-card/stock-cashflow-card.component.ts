@@ -109,6 +109,12 @@ export class StockCashflowCardComponent {
     return `${value.toFixed(2)}x`;
   }
 
+  formatCfoToOp(value: number | null | undefined): string {
+    if (value === null || value === undefined) return '—';
+    const pct = value > 5 ? value : value * 100;
+    return `${Math.round(pct)}%`;
+  }
+
   getChangeClass(value: number | null | undefined): string {
     if (value === null || value === undefined) return 'neutral';
     if (value > 0) return 'positive';
@@ -156,7 +162,8 @@ export class StockCashflowCardComponent {
 
   getRatioProgressPercentage(ratio: number | null | undefined): number {
     if (!ratio || ratio <= 0) return 4;
-    const pct = Math.round((ratio / 2.0) * 100);
+    const normalized = ratio > 5 ? ratio / 100 : ratio;
+    const pct = Math.round((normalized / 1.5) * 100);
     return Math.min(100, Math.max(8, pct));
   }
 

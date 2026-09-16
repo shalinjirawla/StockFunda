@@ -494,6 +494,12 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
                                     }
                                 }
 
+                                // Align Operating Profit to EBITDA standard (Operating Income / EBIT + Depreciation & Amortization)
+                                if (period.OperatingProfit.HasValue && period.Depreciation.HasValue && period.Depreciation.Value > 0)
+                                {
+                                    period.OperatingProfit = period.OperatingProfit.Value + period.Depreciation.Value;
+                                }
+
                                 if (period.Revenue.HasValue && period.OperatingProfit.HasValue)
                                 {
                                     period.Expenses = period.Revenue.Value - period.OperatingProfit.Value;

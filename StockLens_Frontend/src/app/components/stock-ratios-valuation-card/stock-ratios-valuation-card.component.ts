@@ -153,14 +153,6 @@ export class StockRatiosValuationCardComponent {
     return `${formatted} Cr`;
   }
 
-  getMarketCapFormulaTag(): string {
-    const shares = this.getEffectiveShares();
-    if (shares) {
-      return '(Equity Cap ÷ Face Value) × Price';
-    }
-    return 'Price × Outstanding Shares';
-  }
-
   getMarketCapSubMetric(): string {
     const shares = this.getEffectiveShares();
     const price = this.ratios?.currentPrice;

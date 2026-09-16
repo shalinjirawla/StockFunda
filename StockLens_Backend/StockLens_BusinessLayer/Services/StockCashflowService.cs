@@ -150,7 +150,7 @@ namespace StockLens_BusinessLayer.Services
                         if (liveQuote.YearHigh.HasValue) cur.Week52High = liveQuote.YearHigh;
                         if (liveQuote.YearLow.HasValue) cur.Week52Low = liveQuote.YearLow;
                         cur.LastSyncedAt = DateTime.UtcNow;
-                        cur.RatiosAsOfDate = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+                        cur.RatiosAsOfDate = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
 
                         if (cur.TtmEps.HasValue && cur.TtmEps.Value > 0)
                             cur.PeRatio = Math.Round(cur.CurrentPrice.Value / cur.TtmEps.Value, 2);
@@ -332,18 +332,29 @@ namespace StockLens_BusinessLayer.Services
                             if (ebit.HasValue && capEmp.HasValue && capEmp.Value > 0) indianData.Roce = Math.Round((ebit.Value / capEmp.Value) * 100m, 2);
                         }
 
-                        // Dynamic P/E calculation if missing
-                        if (!indianData.PeRatio.HasValue && indianData.CurrentPrice.HasValue && indianData.CurrentPrice.Value > 0)
+                        decimal? computedPe = null;
+                        var eps = indianData.TtmEps ?? latestAnnual?.Eps;
+                        if (eps.HasValue && eps.Value > 0 && indianData.CurrentPrice.HasValue && indianData.CurrentPrice.Value > 0)
                         {
-                            var eps = indianData.TtmEps ?? latestAnnual?.Eps;
-                            if (eps.HasValue && eps.Value > 0) indianData.PeRatio = Math.Round(indianData.CurrentPrice.Value / eps.Value, 2);
-                            else if (marketCap.HasValue && latestAnnual?.NetProfit.HasValue == true && latestAnnual.NetProfit.Value > 0) indianData.PeRatio = Math.Round(marketCap.Value / latestAnnual.NetProfit.Value, 2);
+                            computedPe = Math.Round(indianData.CurrentPrice.Value / eps.Value, 2);
+                        }
+                        else if (marketCap.HasValue && latestAnnual?.NetProfit.HasValue == true && latestAnnual.NetProfit.Value > 0)
+                        {
+                            computedPe = Math.Round(marketCap.Value / latestAnnual.NetProfit.Value, 2);
+                        }
+                        else
+                        {
+                            computedPe = indianData.PeRatio;
                         }
 
-                        // Dynamic P/B calculation if missing
-                        if (!indianData.PbRatio.HasValue && indianData.CurrentPrice.HasValue && indianData.CurrentPrice.Value > 0 && indianData.BookValue.HasValue && indianData.BookValue.Value > 0)
+                        decimal? computedPb = null;
+                        if (indianData.CurrentPrice.HasValue && indianData.CurrentPrice.Value > 0 && indianData.BookValue.HasValue && indianData.BookValue.Value > 0)
                         {
-                            indianData.PbRatio = Math.Round(indianData.CurrentPrice.Value / indianData.BookValue.Value, 2);
+                            computedPb = Math.Round(indianData.CurrentPrice.Value / indianData.BookValue.Value, 2);
+                        }
+                        else
+                        {
+                            computedPb = indianData.PbRatio;
                         }
 
                         decimal? sectorPe = indianData.SectorPe;
@@ -374,9 +385,9 @@ namespace StockLens_BusinessLayer.Services
                         {
                             Roe = indianData.Roe,
                             Roce = indianData.Roce,
-                            PeRatio = indianData.PeRatio,
+                            PeRatio = computedPe,
                             TtmEps = indianData.TtmEps,
-                            PbRatio = indianData.PbRatio,
+                            PbRatio = computedPb,
                             DividendYield = indianData.DividendYield,
                             Week52High = indianData.YearHigh,
                             Week52Low = indianData.YearLow,
@@ -510,43 +521,11 @@ namespace StockLens_BusinessLayer.Services
                 var dbBs = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 1);
                 var latestBsDb = dbBs.FirstOrDefault();
 
-                // 1. Always check and apply real-time live price & 52W High/Low from market feed
-                try
-                {
-                    var liveQuote = await GetLiveQuoteInternalAsync(stock.Symbol, stock.Exchange, cancellationToken);
-                    if (liveQuote?.Price.HasValue == true && liveQuote.Price.Value > 0)
-                    {
-                        cur.CurrentPrice = liveQuote.Price.Value;
-                        if (liveQuote.YearHigh.HasValue) cur.Week52High = liveQuote.YearHigh;
-                        if (liveQuote.YearLow.HasValue) cur.Week52Low = liveQuote.YearLow;
-                        cur.LastSyncedAt = DateTime.UtcNow;
-                        cur.RatiosAsOfDate = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
-
-                        if (cur.TtmEps.HasValue && cur.TtmEps.Value > 0)
-                            cur.PeRatio = Math.Round(cur.CurrentPrice.Value / cur.TtmEps.Value, 2);
-                        if (cur.BookValue.HasValue && cur.BookValue.Value > 0)
-                            cur.PbRatio = Math.Round(cur.CurrentPrice.Value / cur.BookValue.Value, 2);
-
-                        decimal? eqCapDb = latestBsDb?.EquityCapital ?? cur.EquityCapital;
-                        var (refreshedMc, refreshedShares, refreshedEqCap, refreshedMcSrc) = CalculateMarketCap(eqCapDb, cur.FaceValue, cur.CurrentPrice, cur.MarketCap);
-                        cur.MarketCap = refreshedMc;
-                        cur.MarketCapSource = refreshedMcSrc;
-                        cur.TotalShares = refreshedShares ?? cur.TotalShares;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to refresh real-time live price for {Symbol}", stock.Symbol);
-                }
-
-                // 2. If cached entity doesn't have complete ratios/metrics yet, sync from IndianAPI
+                // 1. If cached entity doesn't have complete ratios/metrics yet, sync fundamentals from IndianAPI
                 if (cur.Roe == null ||
-                    cur.PeRatio == null ||
                     cur.FaceValue == null ||
                     cur.MarketCap == null ||
                     cur.BookValue == null ||
-                    cur.Week52High == null ||
-                    cur.Week52Low == null ||
                     cur.Roce == null ||
                     cur.SectorPe == null)
                 {
@@ -565,6 +544,35 @@ namespace StockLens_BusinessLayer.Services
                     {
                         _logger.LogWarning(ex, "Could not lazily populate metrics for {Symbol}.", stock.Symbol);
                     }
+                }
+
+                // 2. ALWAYS fetch and apply real-time live price & 52W High/Low from Yahoo Finance
+                try
+                {
+                    var liveQuote = await GetLiveQuoteInternalAsync(stock.Symbol, stock.Exchange, cancellationToken);
+                    if (liveQuote?.Price.HasValue == true && liveQuote.Price.Value > 0)
+                    {
+                        cur.CurrentPrice = liveQuote.Price.Value;
+                        if (liveQuote.YearHigh.HasValue) cur.Week52High = liveQuote.YearHigh;
+                        if (liveQuote.YearLow.HasValue) cur.Week52Low = liveQuote.YearLow;
+                        cur.LastSyncedAt = DateTime.UtcNow;
+                        cur.RatiosAsOfDate = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+
+                        if (cur.TtmEps.HasValue && cur.TtmEps.Value > 0)
+                            cur.PeRatio = Math.Round(cur.CurrentPrice.Value / cur.TtmEps.Value, 2);
+                        if (cur.BookValue.HasValue && cur.BookValue.Value > 0)
+                            cur.PbRatio = Math.Round(cur.CurrentPrice.Value / cur.BookValue.Value, 2);
+
+                        decimal? eqCapDb = latestBsDb?.EquityCapital ?? cur.EquityCapital;
+                        var (refreshedMc, refreshedShares, refreshedEqCap, refreshedMcSrc) = CalculateMarketCap(eqCapDb, cur.FaceValue, cur.CurrentPrice, cur.MarketCap);
+                        cur.MarketCap = refreshedMc;
+                        cur.MarketCapSource = refreshedMcSrc;
+                        cur.TotalShares = refreshedShares ?? cur.TotalShares;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to refresh real-time live price for {Symbol}", stock.Symbol);
                 }
 
                 // 3. Dynamic formula fallbacks for any still-missing metrics on cur (ZERO static hardcoding)
@@ -714,7 +722,13 @@ namespace StockLens_BusinessLayer.Services
             }
 
             _logger.LogInformation("Attempting primary financial & cashflow sync from IndianAPI for {Symbol}", stock.Symbol);
-            var data = await _indianApiClient.GetStockFinancialsAndOverviewAsync(stock.Symbol, stock.Exchange, cancellationToken);
+            var dataTask = _indianApiClient.GetStockFinancialsAndOverviewAsync(stock.Symbol, stock.Exchange, cancellationToken);
+            var liveQuoteTask = GetLiveQuoteInternalAsync(stock.Symbol, stock.Exchange, cancellationToken);
+
+            await Task.WhenAll(dataTask, liveQuoteTask);
+
+            var data = await dataTask;
+            var liveQuote = await liveQuoteTask;
 
             if (data == null || data.Financials.Count == 0)
             {
@@ -747,19 +761,11 @@ namespace StockLens_BusinessLayer.Services
             }
 
             // Apply real-time live price & 52-week range from Yahoo Finance market feed
-            try
+            if (liveQuote?.Price.HasValue == true && liveQuote.Price.Value > 0)
             {
-                var liveQuote = await GetLiveQuoteInternalAsync(stock.Symbol, stock.Exchange, cancellationToken);
-                if (liveQuote?.Price.HasValue == true && liveQuote.Price.Value > 0)
-                {
-                    data.CurrentPrice = liveQuote.Price.Value;
-                    if (liveQuote.YearHigh.HasValue) data.YearHigh = liveQuote.YearHigh;
-                    if (liveQuote.YearLow.HasValue) data.YearLow = liveQuote.YearLow;
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to fetch live quote for {Symbol} during IndianAPI sync", stock.Symbol);
+                data.CurrentPrice = liveQuote.Price.Value;
+                if (liveQuote.YearHigh.HasValue) data.YearHigh = liveQuote.YearHigh;
+                if (liveQuote.YearLow.HasValue) data.YearLow = liveQuote.YearLow;
             }
 
             var periodsToSave = data.Financials.Take(5).ToList();
@@ -865,15 +871,13 @@ namespace StockLens_BusinessLayer.Services
             IndianApiStockOverviewDto data,
             StockBalanceSheet? matchingBalanceSheet)
         {
-            if (data.CurrentPrice.HasValue) entity.CurrentPrice = data.CurrentPrice;
+            if (!entity.CurrentPrice.HasValue && data.CurrentPrice.HasValue) entity.CurrentPrice = data.CurrentPrice;
             if (data.TtmEps.HasValue) entity.TtmEps = data.TtmEps;
-            if (data.PeRatio.HasValue) entity.PeRatio = data.PeRatio;
-            if (data.PbRatio.HasValue) entity.PbRatio = data.PbRatio;
             if (data.Roe.HasValue) entity.Roe = data.Roe;
             if (data.Roce.HasValue) entity.Roce = data.Roce;
             if (data.DividendYield.HasValue) entity.DividendYield = data.DividendYield;
-            if (data.YearHigh.HasValue) entity.Week52High = data.YearHigh;
-            if (data.YearLow.HasValue) entity.Week52Low = data.YearLow;
+            if (data.YearHigh.HasValue && !entity.Week52High.HasValue) entity.Week52High = data.YearHigh;
+            if (data.YearLow.HasValue && !entity.Week52Low.HasValue) entity.Week52Low = data.YearLow;
             if (data.FaceValue.HasValue) entity.FaceValue = data.FaceValue;
             if (data.BookValue.HasValue) entity.BookValue = data.BookValue;
             if (data.MarketCap.HasValue) entity.MarketCap = data.MarketCap;
@@ -963,22 +967,29 @@ namespace StockLens_BusinessLayer.Services
                 }
             }
 
-            if (!entity.PeRatio.HasValue && currentPrice.HasValue && currentPrice.Value > 0)
+            // Dynamic P/E Calculation prioritizing live Yahoo price
+            var eps = entity.TtmEps ?? entity.Eps;
+            if (eps.HasValue && eps.Value > 0 && currentPrice.HasValue && currentPrice.Value > 0)
             {
-                var eps = entity.TtmEps ?? entity.Eps;
-                if (eps.HasValue && eps.Value > 0)
-                {
-                    entity.PeRatio = Math.Round(currentPrice.Value / eps.Value, 2);
-                }
-                else if (entity.MarketCap.HasValue && entity.NetProfit.HasValue && entity.NetProfit.Value > 0)
-                {
-                    entity.PeRatio = Math.Round(entity.MarketCap.Value / entity.NetProfit.Value, 2);
-                }
+                entity.PeRatio = Math.Round(currentPrice.Value / eps.Value, 2);
+            }
+            else if (entity.MarketCap.HasValue && entity.NetProfit.HasValue && entity.NetProfit.Value > 0)
+            {
+                entity.PeRatio = Math.Round(entity.MarketCap.Value / entity.NetProfit.Value, 2);
+            }
+            else if (data.PeRatio.HasValue)
+            {
+                entity.PeRatio = data.PeRatio;
             }
 
-            if (!entity.PbRatio.HasValue && currentPrice.HasValue && currentPrice.Value > 0 && entity.BookValue.HasValue && entity.BookValue.Value > 0)
+            // Dynamic P/B Calculation prioritizing live Yahoo price
+            if (currentPrice.HasValue && currentPrice.Value > 0 && entity.BookValue.HasValue && entity.BookValue.Value > 0)
             {
                 entity.PbRatio = Math.Round(currentPrice.Value / entity.BookValue.Value, 2);
+            }
+            else if (data.PbRatio.HasValue)
+            {
+                entity.PbRatio = data.PbRatio;
             }
         }
 
@@ -1159,7 +1170,7 @@ namespace StockLens_BusinessLayer.Services
                 if (ratios.DividendYield.HasValue) entity.DividendYield = ratios.DividendYield;
                 if (ratios.Week52High.HasValue) entity.Week52High = ratios.Week52High;
                 if (ratios.Week52Low.HasValue) entity.Week52Low = ratios.Week52Low;
-                if (ratios.Price.HasValue) entity.CurrentPrice = ratios.Price;
+                if (!entity.CurrentPrice.HasValue && ratios.Price.HasValue) entity.CurrentPrice = ratios.Price;
                 if (!string.IsNullOrWhiteSpace(ratios.AsOfDate)) entity.RatiosAsOfDate = ratios.AsOfDate;
             }
 
@@ -1230,7 +1241,7 @@ namespace StockLens_BusinessLayer.Services
                 return cached.Quote;
             }
 
-            // 1. Primary: Real-time Live Quote from Yahoo Finance (Live minute-by-minute LTP during market hours)
+            // Real-time Live Quote directly from Yahoo Finance
             if (_yahooFinanceClient != null)
             {
                 try
@@ -1245,36 +1256,6 @@ namespace StockLens_BusinessLayer.Services
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Failed to get live quote from Yahoo Finance for {Symbol}", cleanSymbol);
-                }
-            }
-
-            // 2. Fallback: IndianAPI (Direct feed snapshot with Price, 52W High, 52W Low)
-            if (_indianApiClient != null)
-            {
-                try
-                {
-                    var quote = await _indianApiClient.GetLiveQuoteAsync(cleanSymbol, cleanExchange, cancellationToken);
-                    if (quote?.Price.HasValue == true && quote.Price.Value > 0)
-                    {
-                        LiveQuoteMemoryCache[cacheKey] = (quote, DateTime.UtcNow);
-                        return quote;
-                    }
-
-                    var directP = await _indianApiClient.GetCurrentPriceAsync(cleanSymbol, cleanExchange, cancellationToken);
-                    if (directP.HasValue && directP.Value > 0)
-                    {
-                        var q = new YahooLiveQuoteDto
-                        {
-                            Symbol = cleanSymbol,
-                            Price = directP.Value
-                        };
-                        LiveQuoteMemoryCache[cacheKey] = (q, DateTime.UtcNow);
-                        return q;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to get live quote from IndianAPI for {Symbol}", cleanSymbol);
                 }
             }
 
@@ -1453,43 +1434,20 @@ namespace StockLens_BusinessLayer.Services
             decimal? peRatio = current.PeRatio;
             decimal? bookValue = current.BookValue;
 
-            if (!currentPrice.HasValue || !week52High.HasValue || !week52Low.HasValue || !faceValue.HasValue || !marketCap.HasValue || !equityCapital.HasValue)
+            // Always fetch real-time live price & 52W range from Yahoo Finance to ensure immediate accuracy
+            try
             {
-                try
+                var liveQuote = await GetLiveQuoteInternalAsync(stock.Symbol, stock.Exchange, cancellationToken);
+                if (liveQuote?.Price.HasValue == true && liveQuote.Price.Value > 0)
                 {
-                    if (_indianApiClient != null)
-                    {
-                        var overview = await _indianApiClient.GetStockFinancialsAndOverviewAsync(stock.Symbol, stock.Exchange, cancellationToken);
-                        if (overview != null)
-                        {
-                            if (!currentPrice.HasValue && overview.CurrentPrice.HasValue) currentPrice = overview.CurrentPrice;
-                            if (!week52High.HasValue && overview.YearHigh.HasValue) week52High = overview.YearHigh;
-                            if (!week52Low.HasValue && overview.YearLow.HasValue) week52Low = overview.YearLow;
-                            if (!faceValue.HasValue && overview.FaceValue.HasValue) faceValue = overview.FaceValue;
-                            if (!marketCap.HasValue && overview.MarketCap.HasValue) marketCap = overview.MarketCap;
-                            if (!equityCapital.HasValue) equityCapital = overview.Financials?.FirstOrDefault()?.EquityCapital;
-                            if (!roe.HasValue && overview.Roe.HasValue) roe = overview.Roe;
-                            if (!roce.HasValue && overview.Roce.HasValue) roce = overview.Roce;
-                            if (!peRatio.HasValue && overview.PeRatio.HasValue) peRatio = overview.PeRatio;
-                            if (!bookValue.HasValue && overview.BookValue.HasValue) bookValue = overview.BookValue;
-                        }
-                    }
-
-                    if (!currentPrice.HasValue || !week52High.HasValue || !week52Low.HasValue)
-                    {
-                        var liveQuote = await GetLiveQuoteInternalAsync(stock.Symbol, stock.Exchange, cancellationToken);
-                        if (liveQuote != null)
-                        {
-                            if (!currentPrice.HasValue && liveQuote.Price.HasValue) currentPrice = liveQuote.Price;
-                            if (!week52High.HasValue && liveQuote.YearHigh.HasValue) week52High = liveQuote.YearHigh;
-                            if (!week52Low.HasValue && liveQuote.YearLow.HasValue) week52Low = liveQuote.YearLow;
-                        }
-                    }
+                    currentPrice = liveQuote.Price.Value;
+                    if (liveQuote.YearHigh.HasValue) week52High = liveQuote.YearHigh;
+                    if (liveQuote.YearLow.HasValue) week52Low = liveQuote.YearLow;
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to fetch supplemental overview metrics for {Symbol}", stock.Symbol);
-                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to fetch live quote for {Symbol} during BuildResponseDtoAsync", stock.Symbol);
             }
 
             if (!faceValue.HasValue && equityCapital.HasValue && equityCapital.Value > 0)
@@ -1538,17 +1496,30 @@ namespace StockLens_BusinessLayer.Services
                 if (ebit.HasValue && capEmp.HasValue && capEmp.Value > 0) roce = Math.Round((ebit.Value / capEmp.Value) * 100m, 2);
             }
 
-            if (!peRatio.HasValue && currentPrice.HasValue && currentPrice.Value > 0)
+            // Dynamic P/E calculation based on current live price
+            var eps = current.TtmEps ?? current.Eps;
+            if (eps.HasValue && eps.Value > 0 && currentPrice.HasValue && currentPrice.Value > 0)
             {
-                var eps = current.TtmEps ?? current.Eps;
-                if (eps.HasValue && eps.Value > 0) peRatio = Math.Round(currentPrice.Value / eps.Value, 2);
-                else if (marketCap.HasValue && current.NetProfit.HasValue && current.NetProfit.Value > 0) peRatio = Math.Round(marketCap.Value / current.NetProfit.Value, 2);
+                peRatio = Math.Round(currentPrice.Value / eps.Value, 2);
+            }
+            else if (marketCap.HasValue && current.NetProfit.HasValue && current.NetProfit.Value > 0)
+            {
+                peRatio = Math.Round(marketCap.Value / current.NetProfit.Value, 2);
+            }
+            else
+            {
+                peRatio = current.PeRatio;
             }
 
-            decimal? pbRatio = current.PbRatio;
-            if (!pbRatio.HasValue && currentPrice.HasValue && currentPrice.Value > 0 && bookValue.HasValue && bookValue.Value > 0)
+            // Dynamic P/B calculation based on current live price
+            decimal? pbRatio = null;
+            if (currentPrice.HasValue && currentPrice.Value > 0 && (bookValue ?? current.BookValue).HasValue && (bookValue ?? current.BookValue)!.Value > 0)
             {
-                pbRatio = Math.Round(currentPrice.Value / bookValue.Value, 2);
+                pbRatio = Math.Round(currentPrice.Value / (bookValue ?? current.BookValue)!.Value, 2);
+            }
+            else
+            {
+                pbRatio = current.PbRatio;
             }
 
             var ratiosDto = new StockRatiosDto

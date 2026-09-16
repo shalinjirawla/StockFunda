@@ -20,6 +20,7 @@ using System.Threading.Tasks;
 using Xunit;
 
 using StockLens_Infrastructure.ExternalServices.IndianApi;
+using StockLens_Infrastructure.ExternalServices.YahooFinanceApi;
 
 namespace StockLens_UnitTests
 {
@@ -33,6 +34,7 @@ namespace StockLens_UnitTests
         private readonly Mock<IFinancialProvider> _mockFinancialProvider;
         private readonly Mock<ISectorValuationService> _mockSectorValuationService;
         private readonly Mock<IIndianApiBalanceSheetClient> _mockIndianApiClient;
+        private readonly Mock<IYahooFinanceClient> _mockYahooFinanceClient;
         private readonly IMapper _mapper;
         private readonly StockCashflowService _service;
 
@@ -50,6 +52,7 @@ namespace StockLens_UnitTests
             _mockFinancialProvider = new Mock<IFinancialProvider>();
             _mockSectorValuationService = new Mock<ISectorValuationService>();
             _mockIndianApiClient = new Mock<IIndianApiBalanceSheetClient>();
+            _mockYahooFinanceClient = new Mock<IYahooFinanceClient>();
 
             var services = new ServiceCollection();
             services.AddLogging();
@@ -66,7 +69,8 @@ namespace StockLens_UnitTests
                 _mockSectorValuationService.Object,
                 _mapper,
                 NullLogger<StockCashflowService>.Instance,
-                _mockIndianApiClient.Object
+                _mockIndianApiClient.Object,
+                _mockYahooFinanceClient.Object
             );
         }
 
@@ -793,10 +797,10 @@ namespace StockLens_UnitTests
                 .Setup(p => p.GetStockDetailsAsync("TCS", "NSE", It.IsAny<CancellationToken>()))
                 .ReturnsAsync(mockDetails);
 
-            // IndianApi returns live price 4100.0m from GET /stock?name=TCS
-            _mockIndianApiClient
-                .Setup(p => p.GetCurrentPriceAsync("TCS", "NSE", It.IsAny<CancellationToken>()))
-                .ReturnsAsync(4100.0m);
+            // YahooFinance returns live price 4100.0m
+            _mockYahooFinanceClient
+                .Setup(p => p.GetLiveQuoteAsync("TCS", "NSE", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new YahooLiveQuoteDto { Symbol = "TCS", Price = 4100.0m });
 
             // Act
             var result = await _service.GetCashflowBySymbolAsync("TCS", "NSE", forceRefresh: true);

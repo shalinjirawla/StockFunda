@@ -79,7 +79,6 @@
         </div>
 
         <div class="card-formula-row">
-          <span class="formula-tag">Net Income ÷ Net Worth</span>
           <span class="sub-metric">Return on Equity</span>
         </div>
 
@@ -107,7 +106,6 @@
         </div>
 
         <div class="card-formula-row">
-          <span class="formula-tag">EBIT ÷ Capital Employed</span>
           <span class="sub-metric">Return on Capital</span>
         </div>
 
@@ -135,7 +133,6 @@
         </div>
 
         <div class="card-formula-row">
-          <span class="formula-tag">Price ÷ TTM EPS</span>
           <span class="sub-metric">{{ ratios?.ttmEps ? 'TTM EPS: ₹' + ratios?.ttmEps : 'Price to Earnings' }}</span>
         </div>
 
@@ -163,7 +160,6 @@
         </div>
 
         <div class="card-formula-row">
-          <span class="formula-tag">52-Week Maximum</span>
           <span class="sub-metric">Resistance Anchor</span>
         </div>
 
@@ -191,7 +187,6 @@
         </div>
 
         <div class="card-formula-row">
-          <span class="formula-tag">52-Week Minimum</span>
           <span class="sub-metric">Support Floor</span>
         </div>
 
@@ -220,7 +215,6 @@
         </div>
 
         <div class="card-formula-row">
-          <span class="formula-tag">Nominal Share Value</span>
           <span class="sub-metric">Base Par Value</span>
         </div>
 
@@ -248,7 +242,6 @@
         </div>
 
         <div class="card-formula-row">
-          <span class="formula-tag">{{ ratios?.totalEquitySource === 'Reported' ? 'Reported Shareholders\' Equity' : 'Total Assets − (Borrowings + Other Liab)' }}</span>
           <span class="sub-metric">{{ ratios?.totalEquityPeriod ? ('Period: ' + ratios?.totalEquityPeriod) : 'Shareholders\' Funds' }}</span>
         </div>
 
@@ -276,7 +269,6 @@
         </div>
 
         <div class="card-formula-row">
-          <span class="formula-tag">Net Worth ÷ Shares</span>
           <span class="sub-metric">Book Value Per Share</span>
         </div>
 
@@ -304,7 +296,6 @@
         </div>
 
         <div class="card-formula-row">
-          <span class="formula-tag">{{ getMarketCapFormulaTag() }}</span>
           <span class="sub-metric">{{ getMarketCapSubMetric() }}</span>
         </div>
 
@@ -332,8 +323,7 @@
         </div>
 
         <div class="card-formula-row">
-          <span class="formula-tag">Cap-Weighted Sector P/E</span>
-          <span class="sub-metric">{{ ratios?.sectorPeAsOfDate ? ('As of: ' + ratios?.sectorPeAsOfDate) : 'Aggregate Cap ÷ TTM Profit' }}</span>
+          <span class="sub-metric">Aggregate Cap ÷ TTM Profit</span>
         </div>
 
         <div class="mini-progress-track">

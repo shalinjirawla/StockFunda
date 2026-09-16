@@ -108,9 +108,10 @@
         </div>
 
         <div class="card-formula-row">
-          <span class="formula-tag">CFO − Capex</span>
           @if (current.fcfMarginPercent !== null && current.fcfMarginPercent !== undefined) {
           <span class="sub-metric">FCF Margin: <strong>{{ formatPercent(current.fcfMarginPercent) }}</strong></span>
+          } @else {
+          <span class="sub-metric">Free Cash Flow</span>
           }
         </div>
 
@@ -141,7 +142,6 @@
         </div>
 
         <div class="card-formula-row">
-          <span class="formula-tag">Cash from Core Operations</span>
           <span class="sub-metric">Operating Activities</span>
         </div>
 
@@ -178,7 +178,6 @@
         </div>
 
         <div class="card-formula-row">
-          <span class="formula-tag">CFO + CFI + CFF</span>
           <span class="sub-metric">Total Net Change in Cash</span>
         </div>
 
@@ -196,8 +195,8 @@
             <span class="category-title">CFO / OP (EBITDA)</span>
           </div>
           @if (current.cfoToOperatingProfitRatio !== null && current.cfoToOperatingProfitRatio !== undefined) {
-          <span class="quality-badge" [class.high]="current.cfoToOperatingProfitRatio >= 0.8">
-            {{ current.cfoToOperatingProfitRatio >= 0.8 ? 'High Conversion' : 'Moderate' }}
+          <span class="quality-badge" [class.high]="(current.cfoToOperatingProfitRatio >= 0.8 && current.cfoToOperatingProfitRatio <= 5) || current.cfoToOperatingProfitRatio >= 80">
+            {{ ((current.cfoToOperatingProfitRatio >= 0.8 && current.cfoToOperatingProfitRatio <= 5) || current.cfoToOperatingProfitRatio >= 80) ? 'High Conversion' : 'Moderate' }}
           </span>
           }
         </div>
@@ -205,13 +204,12 @@
         <div class="card-value-row">
           <span class="holding-value ratio-value">
             {{ current.cfoToOperatingProfitRatio !== null && current.cfoToOperatingProfitRatio !== undefined ?
-            formatRatio(current.cfoToOperatingProfitRatio) : '—' }}
+            formatCfoToOp(current.cfoToOperatingProfitRatio) : '—' }}
           </span>
         </div>
 
         <div class="card-formula-row">
-          <span class="formula-tag">CFO ÷ EBITDA</span>
-          <span class="sub-metric">{{ current.cfoToOperatingProfitRatio && current.cfoToOperatingProfitRatio >= 0.8 ?
+          <span class="sub-metric">{{ current.cfoToOperatingProfitRatio && ((current.cfoToOperatingProfitRatio >= 0.8 && current.cfoToOperatingProfitRatio <= 5) || current.cfoToOperatingProfitRatio >= 80) ?
             'Strong EBITDA Conversion' : 'Operating Cash Conversion' }}</span>
         </div>
 
