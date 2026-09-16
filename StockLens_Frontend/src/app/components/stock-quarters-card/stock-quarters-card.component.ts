@@ -2,12 +2,11 @@ import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { StockQuarterlyResultsResponse, QuarterlyRecord } from '../../models/stock-quarterly-results.model';
 import { LoadingState } from '../../models/stock-news.model';
-import { TimeAgoPipe } from '../../pipes/time-ago.pipe';
 
 @Component({
   selector: 'app-stock-quarters-card',
   standalone: true,
-  imports: [CommonModule, TimeAgoPipe],
+  imports: [CommonModule],
   templateUrl: './stock-quarters-card.component.html',
   styleUrl: './stock-quarters-card.component.css'
 })

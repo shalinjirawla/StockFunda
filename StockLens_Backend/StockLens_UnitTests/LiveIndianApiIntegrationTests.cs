@@ -125,39 +125,17 @@ namespace StockLens_UnitTests
             var body = await res.Content.ReadAsStringAsync();
             using var doc2 = JsonDocument.Parse(body);
 
-            _output.WriteLine("\n--- RAW QUARTERLY PERIODS IN INDIANAPI PAYLOAD ---");
-            if (doc2.RootElement.TryGetProperty("financials", out var finArray))
+            _output.WriteLine("\n--- ROOT PROPERTIES IN INDIANAPI PAYLOAD ---");
+            foreach (var prop in doc2.RootElement.EnumerateObject())
             {
-                int idx = 0;
-                foreach (var fin in finArray.EnumerateArray())
+                _output.WriteLine($"[Root Key] {prop.Name} (Type: {prop.Value.ValueKind})");
+                if (prop.Name.Equals("peerCompanyList", StringComparison.OrdinalIgnoreCase) || 
+                    prop.Name.Equals("peers", StringComparison.OrdinalIgnoreCase) || 
+                    prop.Name.Equals("peerList", StringComparison.OrdinalIgnoreCase) ||
+                    prop.Name.Equals("keyMetrics", StringComparison.OrdinalIgnoreCase) || 
+                    prop.Name.Equals("companyProfile", StringComparison.OrdinalIgnoreCase))
                 {
-                    var type = fin.TryGetProperty("Type", out var t) ? t.GetString() : "N/A";
-                    var ed = fin.TryGetProperty("EndDate", out var e) ? e.GetString() : "N/A";
-                    var fy = fin.TryGetProperty("FiscalYear", out var f) ? f.GetString() : "N/A";
-                    var pl = fin.TryGetProperty("periodLength", out var p) ? p.GetString() : "N/A";
-                    _output.WriteLine($"[Period {idx++}] Type: {type}, EndDate: {ed}, FiscalYear: {fy}, PeriodLength: {pl}");
-
-                    if (fin.TryGetProperty("stockFinancialMap", out var map) && map.ValueKind == JsonValueKind.Object)
-                    {
-                        if (map.TryGetProperty("INC", out var inc) && inc.ValueKind == JsonValueKind.Array)
-                        {
-                            foreach (var item in inc.EnumerateArray())
-                            {
-                                var k = item.GetProperty("key").GetString();
-                                var v = item.GetProperty("value").GetString();
-                                _output.WriteLine($"   [INC] {k} = {v}");
-                            }
-                        }
-                        if (map.TryGetProperty("CAS", out var cas) && cas.ValueKind == JsonValueKind.Array)
-                        {
-                            foreach (var item in cas.EnumerateArray())
-                            {
-                                var k = item.GetProperty("key").GetString();
-                                var v = item.GetProperty("value").GetString();
-                                _output.WriteLine($"   [CAS] {k} = {v}");
-                            }
-                        }
-                    }
+                    _output.WriteLine($"   Value: {prop.Value.ToString()}");
                 }
             }
         }
@@ -360,6 +338,8 @@ namespace StockLens_UnitTests
                 _output.WriteLine($"[{sym}] Cached Roe: {cached?.Ratios?.Roe}");
                 _output.WriteLine($"[{sym}] Cached Roce: {cached?.Ratios?.Roce}");
                 _output.WriteLine($"[{sym}] Cached PeRatio: {cached?.Ratios?.PeRatio}");
+                _output.WriteLine($"[{sym}] Cached SectorPe: {cached?.Ratios?.SectorPe}");
+                _output.WriteLine($"[{sym}] Cached SectorName: {cached?.Ratios?.SectorPeSector}");
 
                 cached.Should().NotBeNull();
                 cached!.Ratios.Should().NotBeNull();
@@ -441,6 +421,20 @@ namespace StockLens_UnitTests
                     _output.WriteLine($"  Period: {h.Period} | Date: {h.PeriodEndDate:yyyy-MM-dd} | Sales: {h.Sales} | NetProfit: {h.NetProfit} | EPS: {h.Eps} | Tax: {h.Tax} | Dep: {h.Depreciation}");
                 }
             }
+        }
+
+        [Fact]
+        public async Task LiveTest_YahooFinanceLiveQuote()
+        {
+            using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            var yahooClient = new StockLens_Infrastructure.ExternalServices.YahooFinanceApi.YahooFinanceClient(
+                httpClient,
+                new Microsoft.Extensions.Logging.Abstractions.NullLogger<StockLens_Infrastructure.ExternalServices.YahooFinanceApi.YahooFinanceClient>());
+
+            var quote = await yahooClient.GetLiveQuoteAsync("RELIANCE", "NSE");
+            _output.WriteLine($"Yahoo Live Quote for RELIANCE: Price={quote?.Price}, 52WHigh={quote?.YearHigh}, 52WLow={quote?.YearLow}");
+            quote.Should().NotBeNull();
+            quote!.Price.Should().BeGreaterThan(0);
         }
     }
 }

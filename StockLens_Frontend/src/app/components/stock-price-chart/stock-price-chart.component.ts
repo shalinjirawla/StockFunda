@@ -3,11 +3,10 @@ import { CommonModule } from '@angular/common';
 import { HighchartsChartComponent } from 'highcharts-angular';
 import * as Highcharts from 'highcharts';
 import { StockPriceHistoryService, PriceHistoryResponseDto } from '../../services/stock-price-history.service';
-import { TimeAgoPipe } from '../../pipes/time-ago.pipe';
 @Component({
   selector: 'app-stock-price-chart',
   standalone: true,
-  imports: [CommonModule, HighchartsChartComponent, TimeAgoPipe],
+  imports: [CommonModule, HighchartsChartComponent],
   templateUrl: './stock-price-chart.component.html',
   styleUrls: ['./stock-price-chart.component.css']
 })

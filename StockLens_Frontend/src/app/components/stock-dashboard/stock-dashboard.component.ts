@@ -1,7 +1,7 @@
 import { Component, OnInit, OnDestroy, inject, signal, HostListener, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subject, Subscription, of } from 'rxjs';
+import { Subject, Subscription, of, timer } from 'rxjs';
 import { debounceTime, distinctUntilChanged, switchMap, catchError } from 'rxjs/operators';
 import { StockNewsService } from '../../services/stock-news.service';
 import { StockShareholdingService } from '../../services/stock-shareholding.service';
@@ -19,7 +19,6 @@ import { StockAssetGrowthCardComponent } from '../stock-asset-growth-card/stock-
 import { StockPriceChartComponent } from '../stock-price-chart/stock-price-chart.component';
 import { StockRatiosValuationCardComponent } from '../stock-ratios-valuation-card/stock-ratios-valuation-card.component';
 import { StockQuartersCardComponent } from '../stock-quarters-card/stock-quarters-card.component';
-import { TimeAgoPipe } from '../../pipes/time-ago.pipe';
 
 export type DashboardSection = 'overview' | 'ratios' | 'cashflow' | 'balancesheet' | 'shareholding' | 'quarters' | 'chart' | 'news';
 
@@ -35,8 +34,7 @@ export type DashboardSection = 'overview' | 'ratios' | 'cashflow' | 'balanceshee
     StockAssetGrowthCardComponent,
     StockPriceChartComponent,
     StockRatiosValuationCardComponent,
-    StockQuartersCardComponent,
-    TimeAgoPipe
+    StockQuartersCardComponent
   ],
   templateUrl: './stock-dashboard.component.html',
   styleUrl: './stock-dashboard.component.css'
@@ -70,6 +68,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
   // Flag to disable scrollspy tracking briefly during programmatic smooth scrolling
   private isProgrammaticScrolling = false;
   private scrollTimeout?: any;
+  private pricePollingSubscription?: Subscription;
 
   // Shareholding State
   shareholdingResponse = signal<StockShareholdingResponse | null>(null);
@@ -114,12 +113,70 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     this.loadAvailableStocks();
     this.setupSearch();
     this.fetchAllData(false);
+    this.startLivePricePolling();
   }
 
   ngOnDestroy(): void {
     this.searchSubscription?.unsubscribe();
+    this.stopLivePricePolling();
     if (this.scrollTimeout) {
       clearTimeout(this.scrollTimeout);
+    }
+  }
+
+  /**
+   * Checks whether the Indian Stock Market (NSE/BSE) is currently open for trading.
+   * Trading hours: Monday to Friday, 09:15 AM to 03:30 PM IST (UTC+5:30).
+   */
+  isIndianMarketOpen(): boolean {
+    const now = new Date();
+    // Convert to Indian Standard Time (IST = UTC + 5 hours 30 minutes)
+    const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const istDate = new Date(utcTime + (3600000 * 5.5));
+
+    const day = istDate.getDay(); // 0 = Sunday, 6 = Saturday
+    if (day === 0 || day === 6) return false;
+
+    const hours = istDate.getHours();
+    const minutes = istDate.getMinutes();
+    const totalMinutes = hours * 60 + minutes;
+
+    // 09:15 AM = 555 mins; 03:30 PM = 930 mins
+    return totalMinutes >= 555 && totalMinutes <= 930;
+  }
+
+  /**
+   * Starts a silent 30-second background polling interval during market hours
+   * to automatically refresh real-time stock price and price-dependent valuation ratios.
+   */
+  startLivePricePolling(): void {
+    this.stopLivePricePolling();
+
+    // Poll every 30 seconds
+    this.pricePollingSubscription = timer(30000, 30000).subscribe(() => {
+      if (this.isIndianMarketOpen()) {
+        const symbol = this.selectedSymbol();
+        const exchange = this.selectedExchange();
+
+        this.cashflowService.getCashflowBySymbol(symbol, exchange, false).subscribe({
+          next: (data) => {
+            if (data && data.ratios && this.selectedSymbol() === symbol) {
+              // Silently update cashflowResponse signal (updates Hero price, P/E, P/B, Market Cap, 52W progress)
+              this.cashflowResponse.set(data);
+            }
+          },
+          error: (err) => {
+            console.debug('[Background Live Price] Polling skipped:', err);
+          }
+        });
+      }
+    });
+  }
+
+  stopLivePricePolling(): void {
+    if (this.pricePollingSubscription) {
+      this.pricePollingSubscription.unsubscribe();
+      this.pricePollingSubscription = undefined;
     }
   }
 
@@ -250,6 +307,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
 
     // Fetch all fundamental and news datasets concurrently
     this.fetchAllData(false);
+    this.startLivePricePolling();
 
     // Scroll to overview top smoothly
     this.scrollToSection('overview');
@@ -261,6 +319,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
       this.searchQuery.set('');
       this.searchResults.set([]);
       this.fetchAllData(false);
+      this.startLivePricePolling();
     }
   }
 
@@ -280,6 +339,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
       this.selectedSymbol.set(query.toUpperCase());
       this.searchResults.set([]);
       this.fetchAllData(false);
+      this.startLivePricePolling();
       this.scrollToSection('overview');
     }
   }

@@ -1,12 +1,11 @@
 import { Component, Input, Output, EventEmitter, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { StockShareholdingResponse, ShareholdingPeriod } from '../../models/stock-shareholding.model';
-import { TimeAgoPipe } from '../../pipes/time-ago.pipe';
 
 @Component({
   selector: 'app-stock-shareholding-card',
   standalone: true,
-  imports: [CommonModule, TimeAgoPipe],
+  imports: [CommonModule],
   templateUrl: './stock-shareholding-card.component.html',
   styleUrl: './stock-shareholding-card.component.css'
 })

@@ -276,13 +276,13 @@ namespace StockLens_BusinessLayer.Services
                         }
                         decimal? eqCap = latestBsDb?.EquityCapital;
 
-                        // Check live quote for 52W high/low if missing
+                        // Check live quote for real-time price & 52W high/low
                         var liveQuote = await GetLiveQuoteInternalAsync(cleanSymbol, stock?.Exchange ?? "NSE", cancellationToken);
-                        if (liveQuote != null)
+                        if (liveQuote?.Price.HasValue == true && liveQuote.Price.Value > 0)
                         {
-                            if (!indianData.CurrentPrice.HasValue && liveQuote.Price.HasValue) indianData.CurrentPrice = liveQuote.Price;
-                            if (!indianData.YearHigh.HasValue && liveQuote.YearHigh.HasValue) indianData.YearHigh = liveQuote.YearHigh;
-                            if (!indianData.YearLow.HasValue && liveQuote.YearLow.HasValue) indianData.YearLow = liveQuote.YearLow;
+                            indianData.CurrentPrice = liveQuote.Price.Value;
+                            if (liveQuote.YearHigh.HasValue) indianData.YearHigh = liveQuote.YearHigh;
+                            if (liveQuote.YearLow.HasValue) indianData.YearLow = liveQuote.YearLow;
                         }
 
                         // Derive Face Value if missing
@@ -526,6 +526,12 @@ namespace StockLens_BusinessLayer.Services
                             cur.PeRatio = Math.Round(cur.CurrentPrice.Value / cur.TtmEps.Value, 2);
                         if (cur.BookValue.HasValue && cur.BookValue.Value > 0)
                             cur.PbRatio = Math.Round(cur.CurrentPrice.Value / cur.BookValue.Value, 2);
+
+                        decimal? eqCapDb = latestBsDb?.EquityCapital ?? cur.EquityCapital;
+                        var (refreshedMc, refreshedShares, refreshedEqCap, refreshedMcSrc) = CalculateMarketCap(eqCapDb, cur.FaceValue, cur.CurrentPrice, cur.MarketCap);
+                        cur.MarketCap = refreshedMc;
+                        cur.MarketCapSource = refreshedMcSrc;
+                        cur.TotalShares = refreshedShares ?? cur.TotalShares;
                     }
                 }
                 catch (Exception ex)
@@ -738,6 +744,22 @@ namespace StockLens_BusinessLayer.Services
                         _logger.LogWarning(ex, "Failed to compute fallback sector valuation for {Sector}", sectorName);
                     }
                 }
+            }
+
+            // Apply real-time live price & 52-week range from Yahoo Finance market feed
+            try
+            {
+                var liveQuote = await GetLiveQuoteInternalAsync(stock.Symbol, stock.Exchange, cancellationToken);
+                if (liveQuote?.Price.HasValue == true && liveQuote.Price.Value > 0)
+                {
+                    data.CurrentPrice = liveQuote.Price.Value;
+                    if (liveQuote.YearHigh.HasValue) data.YearHigh = liveQuote.YearHigh;
+                    if (liveQuote.YearLow.HasValue) data.YearLow = liveQuote.YearLow;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to fetch live quote for {Symbol} during IndianAPI sync", stock.Symbol);
             }
 
             var periodsToSave = data.Financials.Take(5).ToList();
@@ -1203,12 +1225,30 @@ namespace StockLens_BusinessLayer.Services
             var cleanExchange = string.IsNullOrWhiteSpace(exchange) ? "NSE" : exchange.Trim().ToUpperInvariant();
             var cacheKey = $"{cleanSymbol}:{cleanExchange}";
 
-            if (LiveQuoteMemoryCache.TryGetValue(cacheKey, out var cached) && (DateTime.UtcNow - cached.FetchedAt).TotalSeconds < 30)
+            if (LiveQuoteMemoryCache.TryGetValue(cacheKey, out var cached) && (DateTime.UtcNow - cached.FetchedAt).TotalSeconds < 15)
             {
                 return cached.Quote;
             }
 
-            // 1. Primary: Real-time Live Quote from IndianAPI (Direct feed with Price, 52W High, 52W Low)
+            // 1. Primary: Real-time Live Quote from Yahoo Finance (Live minute-by-minute LTP during market hours)
+            if (_yahooFinanceClient != null)
+            {
+                try
+                {
+                    var quote = await _yahooFinanceClient.GetLiveQuoteAsync(cleanSymbol, cleanExchange, cancellationToken);
+                    if (quote?.Price.HasValue == true && quote.Price.Value > 0)
+                    {
+                        LiveQuoteMemoryCache[cacheKey] = (quote, DateTime.UtcNow);
+                        return quote;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to get live quote from Yahoo Finance for {Symbol}", cleanSymbol);
+                }
+            }
+
+            // 2. Fallback: IndianAPI (Direct feed snapshot with Price, 52W High, 52W Low)
             if (_indianApiClient != null)
             {
                 try
@@ -1235,24 +1275,6 @@ namespace StockLens_BusinessLayer.Services
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Failed to get live quote from IndianAPI for {Symbol}", cleanSymbol);
-                }
-            }
-
-            // 2. Fallback: Yahoo Finance
-            if (_yahooFinanceClient != null)
-            {
-                try
-                {
-                    var quote = await _yahooFinanceClient.GetLiveQuoteAsync(cleanSymbol, cleanExchange, cancellationToken);
-                    if (quote?.Price.HasValue == true && quote.Price.Value > 0)
-                    {
-                        LiveQuoteMemoryCache[cacheKey] = (quote, DateTime.UtcNow);
-                        return quote;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to get live quote from Yahoo Finance for {Symbol}", cleanSymbol);
                 }
             }
 

@@ -70,67 +70,13 @@
           </div>
         </div>
 
-        <div class="period-badge-group">
-          <span class="period-pill active">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pill-icon">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-              <line x1="16" y1="2" x2="16" y2="6"></line>
-              <line x1="8" y1="2" x2="8" y2="6"></line>
-              <line x1="3" y1="10" x2="21" y2="10"></line>
-            </svg>
-            {{ current.period }}
-          </span>
-          @if (shareholding.previousPeriod && !selectedHistoricalPeriod()) {
-            <span class="previous-pill">
-              Compared to: {{ shareholding.previousPeriod.period }}
-            </span>
-          }
-          @if (selectedHistoricalPeriod()) {
+        @if (selectedHistoricalPeriod()) {
+          <div class="period-badge-group">
             <button type="button" class="reset-view-btn" (click)="selectPeriod(null)">
               ✕ Reset to Latest Period
             </button>
-          }
-        </div>
-
-        <div class="meta-details">
-          @if (current.dataAsOf) {
-            <span class="meta-item">
-              <strong>Data as of:</strong> {{ current.dataAsOf }}
-            </span>
-          }
-          <span class="meta-item">
-            <strong>Source:</strong> {{ shareholding.source }}
-          </span>
-          @if (current.shareholdersCount) {
-            <span class="meta-item">
-              <strong>Shareholders:</strong> {{ formatCount(current.shareholdersCount) }}
-            </span>
-          }
-          <span class="meta-item">
-            <strong>Last synced:</strong> {{ shareholding.lastSyncedAt | timeAgo }}
-          </span>
-        </div>
-      </div>
-
-      <div class="header-right">
-        <button 
-          type="button" 
-          class="sync-btn"
-          [disabled]="isRefreshing"
-          (click)="onRefreshClick()"
-        >
-          <svg 
-            class="sync-icon" 
-            [class.spinning]="isRefreshing"
-            viewBox="0 0 24 24" 
-            fill="none" 
-            stroke="currentColor" 
-            stroke-width="2"
-          >
-            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
-          </svg>
-          <span>{{ isRefreshing ? 'Syncing Shareholding...' : 'Refresh Shareholding' }}</span>
-        </button>
+          </div>
+        }
       </div>
     </div>
 

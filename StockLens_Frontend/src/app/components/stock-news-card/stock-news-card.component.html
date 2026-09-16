@@ -1,21 +1,10 @@
-<article 
-  class="news-card" 
-  [class.clickable]="hasValidArticleUrl"
-  (click)="openArticle($event)" 
-  tabindex="0" 
-  role="link"
->
+<article class="news-card" [class.clickable]="hasValidArticleUrl" (click)="openArticle($event)" tabindex="0"
+  role="link">
   <div class="news-image-wrapper">
-    <img 
-      [src]="displayImageUrl" 
-      [alt]="newsItem.title" 
-      class="news-image" 
-      loading="lazy"
-      (error)="onImageError()"
-    />
+    <img [src]="displayImageUrl" [alt]="newsItem.title" class="news-image" loading="lazy" (error)="onImageError()" />
     <div class="image-overlay"></div>
     @if (newsItem.category) {
-      <span class="category-badge">{{ newsItem.category }}</span>
+    <span class="category-badge">{{ newsItem.category }}</span>
     }
   </div>
 
@@ -41,33 +30,27 @@
       </time>
     </div>
 
-    <h3 class="news-title" [title]="newsItem.title">
-      {{ newsItem.title }}
-    </h3>
+    <h3 class="news-title" [title]="newsItem.title" [innerHTML]="newsItem.title"></h3>
 
     @if (newsItem.description) {
-      <p class="news-description">
-        {{ newsItem.description }}
-      </p>
+    <p class="news-description">
+      {{ newsItem.description }}
+    </p>
     }
 
     @if (hasValidArticleUrl) {
-      <div class="news-footer">
-        <a 
-          [href]="articleUrl" 
-          target="_blank" 
-          rel="noopener noreferrer" 
-          class="read-more-link"
-          (click)="$event.stopPropagation()"
-        >
-          <span>Read Full Story</span>
-          <svg class="external-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-            <polyline points="15 3 21 3 21 9"></polyline>
-            <line x1="10" y1="14" x2="21" y2="3"></line>
-          </svg>
-        </a>
-      </div>
+    <div class="news-footer">
+      <a [href]="articleUrl" target="_blank" rel="noopener noreferrer" class="read-more-link"
+        (click)="$event.stopPropagation()">
+        <span>Read Full Story</span>
+        <svg class="external-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+          <polyline points="15 3 21 3 21 9"></polyline>
+          <line x1="10" y1="14" x2="21" y2="3"></line>
+        </svg>
+      </a>
+    </div>
     }
   </div>
 </article>

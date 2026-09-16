@@ -292,10 +292,25 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
 
                 // 11. Peers & Sector PE fallback
                 JsonElement peerList = default;
-                bool hasPeers = target.TryGetProperty("peerCompanyList", out peerList) ||
+                bool hasPeers = false;
+                foreach (var s in scopes)
+                {
+                    if ((s.TryGetProperty("peerCompanyList", out peerList) ||
+                         s.TryGetProperty("peerList", out peerList) ||
+                         s.TryGetProperty("peers", out peerList) ||
+                         s.TryGetProperty("peerCompanies", out peerList)) && peerList.ValueKind == JsonValueKind.Array)
+                    {
+                        hasPeers = true;
+                        break;
+                    }
+                }
+                if (!hasPeers)
+                {
+                    hasPeers = (target.TryGetProperty("peerCompanyList", out peerList) ||
                                 target.TryGetProperty("peerList", out peerList) ||
                                 target.TryGetProperty("peers", out peerList) ||
-                                target.TryGetProperty("peerCompanies", out peerList);
+                                target.TryGetProperty("peerCompanies", out peerList)) && peerList.ValueKind == JsonValueKind.Array;
+                }
 
                 if (hasPeers && peerList.ValueKind == JsonValueKind.Array)
                 {

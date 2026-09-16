@@ -1,12 +1,11 @@
 import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { StockCashflowResponse, StockRatios, LoadingState } from '../../models/stock-cashflow.model';
-import { TimeAgoPipe } from '../../pipes/time-ago.pipe';
 
 @Component({
   selector: 'app-stock-cashflow-card',
   standalone: true,
-  imports: [CommonModule, TimeAgoPipe],
+  imports: [CommonModule],
   templateUrl: './stock-cashflow-card.component.html',
   styleUrl: './stock-cashflow-card.component.css'
 })

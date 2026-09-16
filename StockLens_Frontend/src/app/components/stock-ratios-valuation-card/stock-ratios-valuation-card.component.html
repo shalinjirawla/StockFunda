@@ -49,20 +49,6 @@
       </div>
 
       <div class="section-title-right">
-        @if (ratios?.financialsFiscalYear || current?.fiscalYear) {
-        <span class="section-meta-chip">
-          <strong>Fiscal Year:</strong> {{ ratios?.financialsFiscalYear || current?.fiscalYear }}
-        </span>
-        }
-        @if (ratios?.asOfDate) {
-        <span class="section-meta-chip as-of-chip">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pill-inline-icon">
-            <circle cx="12" cy="12" r="10"></circle>
-            <polyline points="12 6 12 12 16 14"></polyline>
-          </svg>
-          <strong>As of Date:</strong> {{ ratios?.asOfDate }}
-        </span>
-        }
         <button type="button" class="sync-btn" [disabled]="isRefreshing" (click)="onRefreshClick()">
           <svg class="sync-icon" [class.spinning]="isRefreshing" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
