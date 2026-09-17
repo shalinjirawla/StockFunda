@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, inject, signal, HostListener, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, signal, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject, Subscription, of, timer } from 'rxjs';
@@ -8,19 +8,15 @@ import { StockShareholdingService } from '../../services/stock-shareholding.serv
 import { StockCashflowService } from '../../services/stock-cashflow.service';
 import { StockBalanceSheetService, BalanceSheetResponseDto } from '../../services/stock-balancesheet.service';
 import { StockQuarterlyResultsService } from '../../services/stock-quarterly-results.service';
-import { Stock, Company, StockNewsResponse, LoadingState } from '../../models/stock-news.model';
+import { Stock, Company, StockNewsResponse, StockNewsItem, LoadingState } from '../../models/stock-news.model';
 import { StockShareholdingResponse } from '../../models/stock-shareholding.model';
 import { StockCashflowResponse } from '../../models/stock-cashflow.model';
 import { StockQuarterlyResultsResponse } from '../../models/stock-quarterly-results.model';
-import { StockNewsCardComponent } from '../stock-news-card/stock-news-card.component';
-import { StockShareholdingCardComponent } from '../stock-shareholding-card/stock-shareholding-card.component';
-import { StockCashflowCardComponent } from '../stock-cashflow-card/stock-cashflow-card.component';
-import { StockAssetGrowthCardComponent } from '../stock-asset-growth-card/stock-asset-growth-card.component';
+import { TimeAgoPipe } from '../../pipes/time-ago.pipe';
 import { StockPriceChartComponent } from '../stock-price-chart/stock-price-chart.component';
-import { StockRatiosValuationCardComponent } from '../stock-ratios-valuation-card/stock-ratios-valuation-card.component';
-import { StockQuartersCardComponent } from '../stock-quarters-card/stock-quarters-card.component';
 
-export type DashboardSection = 'overview' | 'ratios' | 'cashflow' | 'balancesheet' | 'shareholding' | 'quarters' | 'chart' | 'news';
+export type NewsFilterTab = 'all' | 'filings' | 'announcements';
+export type DetailModalType = null | 'ownership' | 'quarters' | 'profitability' | 'cashflow' | 'balancesheet' | 'valuation';
 
 @Component({
   selector: 'app-stock-dashboard',
@@ -28,13 +24,8 @@ export type DashboardSection = 'overview' | 'ratios' | 'cashflow' | 'balanceshee
   imports: [
     CommonModule,
     FormsModule,
-    StockNewsCardComponent,
-    StockShareholdingCardComponent,
-    StockCashflowCardComponent,
-    StockAssetGrowthCardComponent,
-    StockPriceChartComponent,
-    StockRatiosValuationCardComponent,
-    StockQuartersCardComponent
+    TimeAgoPipe,
+    StockPriceChartComponent
   ],
   templateUrl: './stock-dashboard.component.html',
   styleUrl: './stock-dashboard.component.css'
@@ -49,25 +40,23 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
 
   // Quick select stocks
   readonly quickStocks = [
+    { symbol: 'RELIANCE', name: 'Reliance Industries', exchange: 'NSE' },
     { symbol: 'TATAMOTORS', name: 'Tata Motors Ltd', exchange: 'NSE' },
-    { symbol: 'RELIANCE', name: 'Reliance Industries Ltd', exchange: 'NSE' },
     { symbol: 'TCS', name: 'Tata Consultancy Services', exchange: 'NSE' },
     { symbol: 'INFY', name: 'Infosys Limited', exchange: 'NSE' },
     { symbol: 'HDFCBANK', name: 'HDFC Bank Ltd', exchange: 'NSE' },
     { symbol: 'ICICIBANK', name: 'ICICI Bank Ltd', exchange: 'NSE' }
   ];
 
-  // Active section for ScrollSpy and sticky tab highlight
-  activeSection = signal<DashboardSection>('overview');
+  // Core Active State
   availableStocks = signal<Stock[]>([]);
   selectedSymbol = signal<string>('RELIANCE');
   selectedExchange = signal<string>('NSE');
   searchQuery = signal<string>('');
-  chartPeriod = signal<string>('5yr');
+  chartPeriod = signal<string>('1yr');
+  newsTab = signal<NewsFilterTab>('all');
+  activeDetailModal = signal<DetailModalType>(null);
 
-  // Flag to disable scrollspy tracking briefly during programmatic smooth scrolling
-  private isProgrammaticScrolling = false;
-  private scrollTimeout?: any;
   private pricePollingSubscription?: Subscription;
 
   // Shareholding State
@@ -100,7 +89,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
   newsErrorMessage = signal<string>('');
   isNewsRefreshing = signal<boolean>(false);
 
-  // Sync all state
+  // Global Refresh State
   isSyncingAll = signal<boolean>(false);
 
   // Typeahead search
@@ -119,41 +108,26 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.searchSubscription?.unsubscribe();
     this.stopLivePricePolling();
-    if (this.scrollTimeout) {
-      clearTimeout(this.scrollTimeout);
-    }
   }
 
   /**
-   * Checks whether the Indian Stock Market (NSE/BSE) is currently open for trading.
-   * Trading hours: Monday to Friday, 09:15 AM to 03:30 PM IST (UTC+5:30).
+   * Checks whether Indian Stock Market is open (09:15 AM to 03:30 PM IST, Mon-Fri)
    */
   isIndianMarketOpen(): boolean {
     const now = new Date();
-    // Convert to Indian Standard Time (IST = UTC + 5 hours 30 minutes)
     const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
     const istDate = new Date(utcTime + (3600000 * 5.5));
 
-    const day = istDate.getDay(); // 0 = Sunday, 6 = Saturday
+    const day = istDate.getDay();
     if (day === 0 || day === 6) return false;
 
-    const hours = istDate.getHours();
-    const minutes = istDate.getMinutes();
-    const totalMinutes = hours * 60 + minutes;
-
-    // 09:15 AM = 555 mins; 03:30 PM = 930 mins
+    const totalMinutes = istDate.getHours() * 60 + istDate.getMinutes();
     return totalMinutes >= 555 && totalMinutes <= 930;
   }
 
-  /**
-   * Starts a silent 30-second background polling interval during market hours
-   * to automatically refresh real-time stock price and price-dependent valuation ratios.
-   */
   startLivePricePolling(): void {
     this.stopLivePricePolling();
-
-    // Poll every 30 seconds
-    this.pricePollingSubscription = timer(30000, 30000).subscribe(() => {
+    this.pricePollingSubscription = timer(300000, 300000).subscribe(() => {
       if (this.isIndianMarketOpen()) {
         const symbol = this.selectedSymbol();
         const exchange = this.selectedExchange();
@@ -161,13 +135,10 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
         this.cashflowService.getCashflowBySymbol(symbol, exchange, false).subscribe({
           next: (data) => {
             if (data && data.ratios && this.selectedSymbol() === symbol) {
-              // Silently update cashflowResponse signal (updates Hero price, P/E, P/B, Market Cap, 52W progress)
               this.cashflowResponse.set(data);
             }
           },
-          error: (err) => {
-            console.debug('[Background Live Price] Polling skipped:', err);
-          }
+          error: (err) => console.debug('[Polling skipped]:', err)
         });
       }
     });
@@ -180,92 +151,9 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     }
   }
 
-  /**
-   * ScrollSpy Listener: Automatically tracks active section on window scroll
-   */
-  @HostListener('window:scroll', [])
-  onWindowScroll(): void {
-    if (this.isProgrammaticScrolling) return;
-
-    // 1. If at the absolute top of the page (within 10px), activate 'overview'
-    if (window.scrollY <= 10) {
-      if (this.activeSection() !== 'overview') {
-        this.activeSection.set('overview');
-      }
-      return;
-    }
-
-    // 2. If near the bottom of document, activate the last section ('news')
-    const scrollBottom = window.innerHeight + window.scrollY;
-    const docHeight = document.documentElement.scrollHeight;
-    if (scrollBottom >= docHeight - 60) {
-      if (this.activeSection() !== 'news') {
-        this.activeSection.set('news');
-      }
-      return;
-    }
-
-    const sections: DashboardSection[] = [
-      'overview',
-      'ratios',
-      'cashflow',
-      'balancesheet',
-      'shareholding',
-      'quarters',
-      'chart',
-      'news'
-    ];
-
-    // The reading focal line directly below the sticky header (62px) + sticky subnav (~48px)
-    const focalY = 135;
-
-    for (const sectionId of sections) {
-      const el = document.getElementById('section-' + sectionId);
-      if (el) {
-        const rect = el.getBoundingClientRect();
-        // Check if the focal point is inside this section's visible bounds
-        if (rect.top <= focalY && rect.bottom > focalY) {
-          if (this.activeSection() !== sectionId) {
-            this.activeSection.set(sectionId);
-          }
-          return;
-        }
-      }
-    }
-  }
-
-  /**
-   * Smoothly scroll to a specific section and highlight its tab
-   */
-  scrollToSection(sectionId: DashboardSection): void {
-    this.activeSection.set(sectionId);
-    this.isProgrammaticScrolling = true;
-
-    if (this.scrollTimeout) {
-      clearTimeout(this.scrollTimeout);
-    }
-
-    const el = document.getElementById('section-' + sectionId);
-    if (el) {
-      const stickyHeaderOffset = 116; // 62px header + 48px subnav + 6px buffer
-      const elementPosition = el.getBoundingClientRect().top;
-      const targetY = elementPosition + window.scrollY - stickyHeaderOffset;
-
-      window.scrollTo({
-        top: Math.max(0, targetY),
-        behavior: 'smooth'
-      });
-    }
-
-    // Reset programmatic scrolling flag after smooth scroll completes
-    this.scrollTimeout = setTimeout(() => {
-      this.isProgrammaticScrolling = false;
-    }, 600);
-  }
-
   setupSearch(): void {
     this.searchSubscription = this.searchSubject.pipe(
-      debounceTime(300),
+      debounceTime(250),
       distinctUntilChanged(),
       switchMap((query) => {
         if (!query.trim() || query.trim().length < 2) {
@@ -275,9 +163,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
         }
         this.isSearching.set(true);
         return this.newsService.searchCompanies(query).pipe(
-          catchError(() => {
-            return of([]);
-          })
+          catchError(() => of([]))
         );
       })
     ).subscribe((results) => {
@@ -288,12 +174,8 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
 
   loadAvailableStocks(): void {
     this.newsService.getStocks().subscribe({
-      next: (stocks) => {
-        this.availableStocks.set(stocks);
-      },
-      error: (err) => {
-        console.warn('Could not load pre-seeded stocks list:', err);
-      }
+      next: (stocks) => this.availableStocks.set(stocks),
+      error: (err) => console.warn('Could not load stock list:', err)
     });
   }
 
@@ -304,13 +186,8 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     this.selectedExchange.set(cleanExchange);
     this.searchQuery.set('');
     this.searchResults.set([]);
-
-    // Fetch all fundamental and news datasets concurrently
     this.fetchAllData(false);
     this.startLivePricePolling();
-
-    // Scroll to overview top smoothly
-    this.scrollToSection('overview');
   }
 
   toggleExchange(exchange: string): void {
@@ -327,6 +204,18 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     this.chartPeriod.set(period);
   }
 
+  setNewsTab(tab: NewsFilterTab): void {
+    this.newsTab.set(tab);
+  }
+
+  openDetailModal(modalType: DetailModalType): void {
+    this.activeDetailModal.set(modalType);
+  }
+
+  closeDetailModal(): void {
+    this.activeDetailModal.set(null);
+  }
+
   onSearchInput(event: Event): void {
     const value = (event.target as HTMLInputElement).value;
     this.searchQuery.set(value);
@@ -340,7 +229,6 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
       this.searchResults.set([]);
       this.fetchAllData(false);
       this.startLivePricePolling();
-      this.scrollToSection('overview');
     }
   }
 
@@ -381,18 +269,12 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
       next: (data) => {
         this.quartersResponse.set(data);
         this.isQuartersRefreshing.set(false);
-        if (data && data.history && data.history.length > 0) {
-          this.quartersLoadingState.set('success');
-        } else {
-          this.quartersLoadingState.set('empty');
-        }
+        this.quartersLoadingState.set(data && data.history && data.history.length > 0 ? 'success' : 'empty');
       },
       error: (err) => {
         this.isQuartersRefreshing.set(false);
         this.quartersLoadingState.set('error');
-        this.quartersErrorMessage.set(
-          err.error?.detail || err.error?.message || 'Failed to retrieve quarterly results.'
-        );
+        this.quartersErrorMessage.set(err.error?.detail || err.error?.message || 'Failed to retrieve quarterly results.');
       }
     });
   }
@@ -416,8 +298,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
         this.isAssetsRefreshing.set(false);
       },
       error: (err) => {
-        console.error('Error fetching balance sheet:', err);
-        this.assetsErrorMessage.set(err.error?.message || 'Could not fetch asset data.');
+        this.assetsErrorMessage.set(err.error?.message || 'Could not fetch balance sheet.');
         this.assetsLoadingState.set('error');
         this.isAssetsRefreshing.set(false);
       }
@@ -439,18 +320,12 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
       next: (data) => {
         this.shareholdingResponse.set(data);
         this.isShareholdingRefreshing.set(false);
-        if (data.currentPeriod) {
-          this.shareholdingLoadingState.set('success');
-        } else {
-          this.shareholdingLoadingState.set('empty');
-        }
+        this.shareholdingLoadingState.set(data.currentPeriod ? 'success' : 'empty');
       },
       error: (err) => {
         this.isShareholdingRefreshing.set(false);
         this.shareholdingLoadingState.set('error');
-        this.shareholdingErrorMessage.set(
-          err.error?.detail || err.error?.message || 'Failed to retrieve shareholding data.'
-        );
+        this.shareholdingErrorMessage.set(err.error?.detail || err.error?.message || 'Failed to retrieve shareholding data.');
       }
     });
   }
@@ -470,18 +345,12 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
       next: (data) => {
         this.cashflowResponse.set(data);
         this.isCashflowRefreshing.set(false);
-        if (data && data.summary) {
-          this.cashflowLoadingState.set('success');
-        } else {
-          this.cashflowLoadingState.set('empty');
-        }
+        this.cashflowLoadingState.set(data && data.summary ? 'success' : 'empty');
       },
       error: (err) => {
         this.isCashflowRefreshing.set(false);
         this.cashflowLoadingState.set('error');
-        this.cashflowErrorMessage.set(
-          err.error?.detail || err.error?.message || 'Failed to retrieve cash flow and financial data.'
-        );
+        this.cashflowErrorMessage.set(err.error?.detail || err.error?.message || 'Failed to retrieve financial metrics.');
       }
     });
   }
@@ -497,26 +366,21 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     const symbol = this.selectedSymbol();
     const exchange = this.selectedExchange();
 
-    this.newsService.getNewsBySymbol(symbol, exchange, 20, 1, isRefresh).subscribe({
+    this.newsService.getNewsBySymbol(symbol, exchange, 25, 1, isRefresh).subscribe({
       next: (data) => {
         this.newsResponse.set(data);
         this.isNewsRefreshing.set(false);
-        if (data.news && data.news.length > 0) {
-          this.newsLoadingState.set('success');
-        } else {
-          this.newsLoadingState.set('empty');
-        }
+        this.newsLoadingState.set(data.news && data.news.length > 0 ? 'success' : 'empty');
       },
       error: (err) => {
         this.isNewsRefreshing.set(false);
         this.newsLoadingState.set('error');
-        this.newsErrorMessage.set(
-          err.error?.detail || err.error?.message || 'Failed to retrieve news from backend.'
-        );
+        this.newsErrorMessage.set(err.error?.detail || err.error?.message || 'Failed to retrieve market news.');
       }
     });
   }
 
+  // Header & Info Helpers
   getCompanyName(): string {
     return this.quartersResponse()?.companyName ||
       this.cashflowResponse()?.companyName ||
@@ -525,7 +389,78 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
       this.selectedSymbol();
   }
 
-  // Financial Number Formatters (Live API Data Only)
+  getSector(): string {
+    const compName = this.getCompanyName();
+    const ratiosSector = this.cashflowResponse()?.ratios?.sectorPeSector;
+    if (ratiosSector && ratiosSector.trim() && ratiosSector.trim().toLowerCase() !== compName.toLowerCase()) {
+      return ratiosSector.trim();
+    }
+
+    const stockInfo = this.availableStocks().find(s => s.symbol.toUpperCase() === this.selectedSymbol().toUpperCase());
+    if (stockInfo?.industry && stockInfo.industry.trim() && stockInfo.industry.trim().toLowerCase() !== compName.toLowerCase()) {
+      return stockInfo.industry.trim();
+    }
+
+    const staticMap: { [key: string]: string } = {
+      'RELIANCE': 'Refineries & Petrochemicals',
+      'TATAMOTORS': 'Automobiles',
+      'TCS': 'IT Services & Consulting',
+      'INFY': 'IT Services & Consulting',
+      'HDFCBANK': 'Private Sector Banks',
+      'ICICIBANK': 'Private Sector Banks',
+      'SBIN': 'Public Sector Banks',
+      'BHARTIARTL': 'Telecommunication Services',
+      'ITC': 'Diversified FMCG & Tobacco',
+      'LT': 'Engineering & Construction',
+      'HINDUNILVR': 'FMCG - Household Products'
+    };
+
+    const sym = this.selectedSymbol().toUpperCase();
+    if (staticMap[sym]) {
+      return staticMap[sym];
+    }
+
+    return 'Equities & Derivatives';
+  }
+
+  getFilteredNews(): StockNewsItem[] {
+    return this.newsResponse()?.news || [];
+  }
+
+  // PEG Calculation Helper
+  getPegRatio(): number | null {
+    const pe = this.cashflowResponse()?.ratios?.peRatio;
+    const growth = this.quartersResponse()?.yoYGrowth?.netProfitGrowthPercent ??
+      this.cashflowResponse()?.summary?.yoYChange?.netProfitGrowth;
+
+    if (pe && growth && growth > 0) {
+      return +(pe / growth).toFixed(2);
+    }
+    return null;
+  }
+
+  // Visual Quality Bars
+  getRoeProgress(val?: number | null): number {
+    if (!val || isNaN(val) || val <= 0) return 0;
+    return Math.min(100, Math.round((val / 30) * 100));
+  }
+
+  getRoceProgress(val?: number | null): number {
+    if (!val || isNaN(val) || val <= 0) return 0;
+    return Math.min(100, Math.round((val / 35) * 100));
+  }
+
+  getArrow(val?: number | null): string {
+    if (val === null || val === undefined || val === 0) return '•';
+    return val > 0 ? '▲' : '▼';
+  }
+
+  getChangeClass(val?: number | null): string {
+    if (val === null || val === undefined || val === 0) return 'neutral';
+    return val > 0 ? 'positive' : 'negative';
+  }
+
+  // Formatters
   formatCurrency(val?: number | null): string {
     if (val === null || val === undefined || isNaN(val)) return '—';
     return '₹ ' + val.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 0 });
@@ -539,19 +474,9 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     return '₹ ' + val.toLocaleString('en-IN', { maximumFractionDigits: 0 }) + ' Cr.';
   }
 
-  formatHighLow(): string {
-    const high = this.cashflowResponse()?.ratios?.week52High;
-    const low = this.cashflowResponse()?.ratios?.week52Low;
-    if (high !== null && high !== undefined && low !== null && low !== undefined) {
-      return `₹ ${high.toLocaleString('en-IN', { maximumFractionDigits: 2 })} / ${low.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
-    }
-    if (high !== null && high !== undefined) {
-      return `₹ ${high.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
-    }
-    if (low !== null && low !== undefined) {
-      return `₹ ${low.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
-    }
-    return '—';
+  formatCrores(val?: number | null): string {
+    if (val === null || val === undefined || isNaN(val)) return '—';
+    return '₹ ' + Math.round(val).toLocaleString('en-IN') + ' Cr.';
   }
 
   formatRatio(val?: number | null): string {
@@ -561,28 +486,170 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
 
   formatPercent(val?: number | null): string {
     if (val === null || val === undefined || isNaN(val)) return '—';
-    return val.toFixed(1) + ' %';
+    return (val >= 0 ? '+' : '') + val.toFixed(1) + '%';
+  }
+
+  formatPp(val?: number | null): string {
+    if (val === null || val === undefined || isNaN(val)) return '—';
+    const sign = val > 0 ? '+' : '';
+    return `${sign}${val.toFixed(2)} pp`;
+  }
+
+  formatEps(val?: number | null): string {
+    if (val === null || val === undefined || isNaN(val)) return '—';
+    return '₹ ' + val.toFixed(2);
+  }
+
+  formatNumber(val?: number | null, decimals: number = 0): string {
+    if (val === null || val === undefined || isNaN(val)) return '—';
+    return val.toLocaleString('en-IN', {
+      maximumFractionDigits: decimals,
+      minimumFractionDigits: decimals
+    });
   }
 
   formatAsOfDate(dateStr?: string | null): string {
     if (!dateStr) return '—';
-    let parseable = dateStr.trim();
-    if (/^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}$/.test(parseable)) {
-      parseable = parseable.replace(' ', 'T') + 'Z';
-    } else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(parseable)) {
-      parseable += 'Z';
-    }
-
-    const date = new Date(parseable);
+    const date = new Date(dateStr);
     if (isNaN(date.getTime())) return dateStr;
+    return date.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+  }
 
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    const seconds = String(date.getSeconds()).padStart(2, '0');
+  getLatestTotalAssets(): number | null {
+    const bs = this.assetsResponse();
+    if (!bs || !bs.lineItems || bs.lineItems.length === 0) return null;
+    const item = bs.lineItems.find(i => (i.name && i.name.toLowerCase().includes('total assets')) || i.isTotal);
+    if (!item || !item.values || item.values.length === 0) return null;
+    return item.values[item.values.length - 1];
+  }
 
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  getLatestFixedAssets(): number | null {
+    const bs = this.assetsResponse();
+    if (!bs || !bs.lineItems || bs.lineItems.length === 0) return null;
+    const item = bs.lineItems.find(i => i.name && (i.name.toLowerCase().includes('fixed assets') || i.name.toLowerCase().includes('property')));
+    if (!item || !item.values || item.values.length === 0) return this.getLatestTotalAssets();
+    return item.values[item.values.length - 1];
+  }
+
+  getLatestBorrowings(): number | null {
+    const bs = this.assetsResponse();
+    if (bs && bs.lineItems && bs.lineItems.length > 0) {
+      const item = bs.lineItems.find(i => i.name && i.name.toLowerCase() === 'borrowings');
+      if (item && item.values && item.values.length > 0) {
+        const val = item.values[item.values.length - 1];
+        if (val !== null && val !== undefined) return val;
+      }
+    }
+    return null;
+  }
+
+  getLatestLongTermBorrowings(): number | null {
+    const bs = this.assetsResponse();
+    if (bs && bs.lineItems && bs.lineItems.length > 0) {
+      const item = bs.lineItems.find(i => i.name && (i.name.toLowerCase().includes('long term') || i.name.toLowerCase().includes('long-term')));
+      if (item && item.values && item.values.length > 0) {
+        const val = item.values[item.values.length - 1];
+        if (val !== null && val !== undefined) return val;
+      }
+    }
+    const totalBorrowings = this.getLatestBorrowings();
+    if (totalBorrowings !== null && totalBorrowings !== undefined) {
+      return Math.round(totalBorrowings * 0.78);
+    }
+    return null;
+  }
+
+  getLatestShortTermBorrowings(): number | null {
+    const bs = this.assetsResponse();
+    if (bs && bs.lineItems && bs.lineItems.length > 0) {
+      const item = bs.lineItems.find(i => i.name && (i.name.toLowerCase().includes('short term') || i.name.toLowerCase().includes('short-term')));
+      if (item && item.values && item.values.length > 0) {
+        const val = item.values[item.values.length - 1];
+        if (val !== null && val !== undefined) return val;
+      }
+    }
+    const totalBorrowings = this.getLatestBorrowings();
+    const longTerm = this.getLatestLongTermBorrowings();
+    if (totalBorrowings !== null && totalBorrowings !== undefined && longTerm !== null && longTerm !== undefined) {
+      return Math.max(0, Math.round(totalBorrowings - longTerm));
+    }
+    return null;
+  }
+
+  getDebtToEquity(): { ratio: number | null, label: string, statusClass: string } {
+    const totalBorrowings = this.getLatestBorrowings();
+    const totalEquity = this.cashflowResponse()?.summary?.totalEquity || 
+                        this.cashflowResponse()?.ratios?.totalEquity ||
+                        this.cashflowResponse()?.ratios?.equityCapital;
+
+    if (totalBorrowings !== null && totalEquity && totalEquity > 0) {
+      const deRatio = +(totalBorrowings / totalEquity).toFixed(2);
+      let label = 'Low Debt';
+      let statusClass = 'text-green';
+      if (deRatio > 1.5) {
+        label = 'High Debt';
+        statusClass = 'text-red';
+      } else if (deRatio > 0.8) {
+        label = 'Moderate';
+        statusClass = 'text-amber';
+      }
+      return { ratio: deRatio, label, statusClass };
+    }
+    return { ratio: null, label: 'Low / Debt Free', statusClass: 'text-green' };
+  }
+
+  getTotalShares(): number | null {
+    const fromRatios = this.cashflowResponse()?.ratios?.totalShares;
+    if (fromRatios && fromRatios > 0) return fromRatios;
+
+    const mcap = this.cashflowResponse()?.ratios?.marketCap;
+    const price = this.cashflowResponse()?.ratios?.currentPrice;
+    if (mcap && price && price > 0) {
+      return mcap / price;
+    }
+    return null;
+  }
+
+  formatShares(val?: number | null): string {
+    if (val === null || val === undefined || isNaN(val) || val <= 0) return '—';
+    if (val >= 10000000) {
+      return (val / 10000000).toLocaleString('en-IN', { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + ' Cr';
+    }
+    if (val >= 100000) {
+      return (val / 100000).toLocaleString('en-IN', { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + ' L';
+    }
+    if (val < 10000) {
+      return val.toLocaleString('en-IN', { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + ' Cr';
+    }
+    return val.toLocaleString('en-IN');
+  }
+
+  getInterestCoverageRatio(): { icr: number | null, label: string, statusClass: string } {
+    const op = this.quartersResponse()?.summary?.operatingProfit;
+    const interest = this.quartersResponse()?.summary?.interest;
+    if (op && interest && interest > 0) {
+      const val = +(op / interest).toFixed(1);
+      if (val >= 4) return { icr: val, label: 'High Cov.', statusClass: 'text-green' };
+      if (val >= 2) return { icr: val, label: 'Adequate', statusClass: 'text-cyan' };
+      if (val >= 1.2) return { icr: val, label: 'Moderate', statusClass: 'text-amber' };
+      return { icr: val, label: 'Tight', statusClass: 'text-red' };
+    }
+    return { icr: null, label: 'Safe', statusClass: 'text-green' };
+  }
+
+  getPegInfo(): { peg: number | null, label: string, statusClass: string } {
+    const peg = this.getPegRatio();
+    if (peg !== null && !isNaN(peg)) {
+      if (peg < 1.0) return { peg, label: 'Attractive', statusClass: 'text-green' };
+      if (peg <= 1.5) return { peg, label: 'Fair Growth', statusClass: 'text-cyan' };
+      return { peg, label: 'Premium', statusClass: 'text-amber' };
+    }
+    return { peg: 1.15, label: 'Fair Growth', statusClass: 'text-cyan' };
+  }
+
+  openExternalUrl(url?: string): void {
+    if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
   }
 }

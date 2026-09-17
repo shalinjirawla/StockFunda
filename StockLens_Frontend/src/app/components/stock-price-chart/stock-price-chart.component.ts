@@ -13,7 +13,8 @@ import { StockPriceHistoryService, PriceHistoryResponseDto } from '../../service
 export class StockPriceChartComponent implements OnChanges, OnInit {
   @Input() symbol!: string;
   @Input() exchange: string = 'NSE';
-  @Input() period: string = '5yr';
+  @Input() period: string = '1yr';
+  @Input() customHeight: string = '100%';
   @Output() errorOccurred = new EventEmitter<string>();
 
   private priceService = inject(StockPriceHistoryService);
@@ -85,6 +86,16 @@ export class StockPriceChartComponent implements OnChanges, OnInit {
     this.loadPriceHistory(true);
   }
 
+  toggleSeries(seriesName: string): void {
+    this.activeSeriesState[seriesName] = !this.activeSeriesState[seriesName];
+    if (this.chart && this.chart.series) {
+      const s = this.chart.series.find((x: any) => x.name === seriesName);
+      if (s) {
+        s.setVisible(this.activeSeriesState[seriesName], true);
+      }
+    }
+  }
+
   private renderChart(data: PriceHistoryResponseDto): void {
     // ROOT CAUSE FIX: Read the exact visibility state directly from the LIVE chart
     // before we update the data. This bypasses all legend HTML click bugs!
@@ -111,7 +122,7 @@ export class StockPriceChartComponent implements OnChanges, OnInit {
     // Determine axis formatting based on period
     let tickInterval = 365 * 24 * 3600 * 1000; // 1 year default
     let labelFormat = '{value:%Y}';
-    const p = (this.period || '5yr').toLowerCase();
+    const p = (this.period || '1yr').toLowerCase();
 
     if (p === '1m') {
       tickInterval = 7 * 24 * 3600 * 1000; // 1 week
@@ -192,24 +203,17 @@ export class StockPriceChartComponent implements OnChanges, OnInit {
       chart: {
         backgroundColor: 'transparent',
         style: { fontFamily: 'Inter, sans-serif' },
-        marginRight: 100, // Space for right Y axis labels + title
-        marginLeft: 100  // Space for left Y axis labels + title
+        marginRight: 55, // Space for right Y axis labels
+        marginLeft: 45,  // Space for left Y axis labels
+        marginTop: 10,
+        marginBottom: 28, // Clear space for bottom X axis years
+        spacing: [4, 4, 4, 4]
       },
       title: {
         text: ''
       },
       legend: {
-        useHTML: true,
-        symbolWidth: 0,
-        symbolHeight: 0,
-        symbolPadding: 0,
-        squareSymbol: false,
-        labelFormatter: function (this: any) {
-          const textOpacity = this.visible ? 1 : 0.4;
-          return `<span style="font-size: 15px; font-weight: 500;"><span style="color: ${this.color}; font-size: 1.3em; margin-right: 6px; vertical-align: middle;">\u25CF</span><span style="opacity: ${textOpacity}; vertical-align: middle;">${this.name}</span></span>`;
-        },
-        itemStyle: { fontSize: '16px', color: 'rgba(255, 255, 255, 0.9)', cursor: 'pointer', fontWeight: '500' },
-        itemHiddenStyle: { color: 'rgba(255, 255, 255, 0.8)', textDecoration: 'none' }
+        enabled: false // Checkboxes are placed in the card header
       },
       credits: {
         enabled: false
@@ -218,38 +222,41 @@ export class StockPriceChartComponent implements OnChanges, OnInit {
         type: 'datetime',
         gridLineColor: 'rgba(255, 255, 255, 0.05)',
         labels: {
-          style: { color: 'rgba(255, 255, 255, 0.6)' },
-          format: labelFormat
+          style: { color: 'rgba(255, 255, 255, 0.9)', fontSize: '11px', fontWeight: '600' },
+          format: labelFormat,
+          y: 18
         },
         tickInterval: tickInterval,
-        lineColor: 'rgba(255, 255, 255, 0.1)',
-        tickColor: 'rgba(255, 255, 255, 0.1)'
+        lineColor: 'rgba(255, 255, 255, 0.15)',
+        tickColor: 'rgba(255, 255, 255, 0.15)'
       },
       yAxis: [
         {
-          // Primary yAxis for Prices (Moved to Right Side)
+          // Primary yAxis for Prices (Right Side)
           opposite: true,
-          title: { text: 'Price (₹)', style: { color: 'rgba(255, 255, 255, 0.8)', fontWeight: '500', fontSize: '14px', letterSpacing: '0.5px' } },
+          title: { text: '' },
           tickInterval: 100,
           gridLineColor: 'rgba(255, 255, 255, 0.05)',
           labels: {
-            style: { color: 'rgba(255, 255, 255, 0.6)' },
+            style: { color: 'rgba(255, 255, 255, 0.7)', fontSize: '11px', fontWeight: '500' },
             formatter: function (this: any) {
               return Highcharts.numberFormat(this.value, 0, '', ',');
             }
           }
         },
         {
-          // Secondary yAxis for Volumes (Moved to Left Side)
+          // Secondary yAxis for Volumes (Left Side)
           opposite: false,
-          title: { text: 'Volume', style: { color: 'rgba(255, 255, 255, 0.8)', fontWeight: '500', fontSize: '14px', letterSpacing: '0.5px' } },
+          title: { text: '' },
           gridLineWidth: 0,
-          tickInterval: 20000000, // Enforce ticks every 20,000,000 (20000K)
+          tickInterval: 20000000,
           labels: {
-            style: { color: 'rgba(255, 255, 255, 0.4)' },
+            style: { color: 'rgba(255, 255, 255, 0.5)', fontSize: '10px', fontWeight: '500' },
             formatter: function (this: any) {
               const val = this.value as number;
-              if (val >= 1000) return Math.floor(val / 1000) + 'K';
+              if (val >= 10000000) return (val / 10000000).toFixed(0) + 'Cr';
+              if (val >= 1000000) return (val / 1000000).toFixed(0) + 'M';
+              if (val >= 1000) return (val / 1000).toFixed(0) + 'K';
               return val.toString();
             }
           }

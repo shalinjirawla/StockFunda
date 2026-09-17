@@ -1,107 +1,111 @@
 .chart-container {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
   width: 100%;
+  height: 100%;
 }
 
-/* =========================================
-   Header Card & Metadata
-   ========================================= */
-.pattern-header-card {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 1rem;
-  background: rgba(18, 24, 38, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  padding: 1.1rem 1.4rem;
-  backdrop-filter: blur(12px);
-}
-
-.header-left {
+.chart-wrapper {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  justify-content: space-between;
+  overflow: hidden;
 }
 
-.period-badge-group {
+.chart-canvas-area {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Custom Checkbox Bar at Bottom */
+.chart-checkbox-bar {
+  height: 24px;
+  min-height: 24px;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 0.6rem;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 0 0.5rem 2px 0.5rem;
+  user-select: none;
 }
 
-.period-pill {
+.chart-checkbox-item {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  background: linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(14, 165, 233, 0.2));
-  color: #38bdf8;
-  border: 1px solid rgba(56, 189, 248, 0.4);
-  padding: 0.35rem 0.8rem;
-  border-radius: 9999px;
-  font-size: 0.88rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.pill-icon {
-  width: 15px;
-  height: 15px;
-}
-
-.meta-details {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 1.2rem;
-  font-size: 0.82rem;
-  color: #94a3b8;
-}
-
-.meta-item strong {
-  color: #e2e8f0;
-  font-weight: 600;
-}
-
-.sync-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  background: rgba(30, 41, 59, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #e2e8f0;
-  padding: 0.5rem 1rem;
-  border-radius: 8px;
-  font-size: 0.85rem;
-  font-weight: 500;
+  gap: 0.45rem;
   cursor: pointer;
-  transition: all 0.2s ease;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  transition: all 0.15s ease;
 }
 
-.sync-btn:hover {
-  background: rgba(51, 65, 85, 0.8);
-  border-color: rgba(255, 255, 255, 0.2);
+.chart-checkbox-item:hover {
   color: #fff;
 }
 
-.sync-icon {
-  width: 14px;
-  height: 14px;
+.custom-checkbox {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.04);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
 }
 
-/* =========================================
-   Chart Wrapper
-   ========================================= */
-.chart-wrapper {
-  background: rgba(18, 24, 38, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 14px;
-  padding: 1rem;
-  backdrop-filter: blur(10px);
+.custom-checkbox svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* Colors matching Image 1 */
+/* 1. Price on NSE: Indigo/Purple-blue */
+.custom-checkbox.cb-price.checked {
+  background: #5356ff;
+  border-color: #5356ff;
+  color: #ffffff;
+  box-shadow: 0 0 8px rgba(83, 86, 255, 0.4);
+}
+
+/* 2. 50 DMA: Amber/Orange */
+.custom-checkbox.cb-dma50.checked {
+  background: #eab308;
+  border-color: #eab308;
+  color: #ffffff;
+  box-shadow: 0 0 8px rgba(234, 179, 8, 0.4);
+}
+
+/* 3. 200 DMA: Dark slate/gray-blue */
+.custom-checkbox.cb-dma200.checked {
+  background: #475569;
+  border-color: #475569;
+  color: #ffffff;
+  box-shadow: 0 0 8px rgba(71, 85, 105, 0.4);
+}
+
+/* 4. Volume: Soft light blue/lavender */
+.custom-checkbox.cb-volume.checked {
+  background: #93c5fd;
+  border-color: #93c5fd;
+  color: #1e3a8a;
+  box-shadow: 0 0 8px rgba(147, 197, 253, 0.4);
+}
+
+.cb-label {
+  letter-spacing: 0.01em;
 }
 
 /* =========================================
@@ -189,7 +193,7 @@
 }
 
 .shimmer {
-  background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.03) 25%, rgba(255, 255, 255, 0.08) 50%, rgba(255, 255, 255, 0.03) 75%);
   background-size: 200% 100%;
   animation: shimmer 2s infinite linear;
   border-radius: 8px;
@@ -208,6 +212,11 @@
 }
 
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
 }

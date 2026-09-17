@@ -770,6 +770,8 @@ namespace StockLens_BusinessLayer.Services
 
             var periodsToSave = data.Financials.Take(5).ToList();
 
+            var latestAnnual = periodsToSave.FirstOrDefault(p => string.Equals(p.PeriodType, "annual", StringComparison.OrdinalIgnoreCase)) ?? periodsToSave.FirstOrDefault();
+
             for (int i = 0; i < periodsToSave.Count; i++)
             {
                 var period = periodsToSave[i];
@@ -786,7 +788,7 @@ namespace StockLens_BusinessLayer.Services
                 var matchingBs = balanceSheets.FirstOrDefault(b =>
                     (!string.IsNullOrEmpty(b.FiscalYear) && b.FiscalYear.Equals(period.FiscalYear, StringComparison.OrdinalIgnoreCase)) ||
                     (b.PeriodEndDate.HasValue && period.PeriodEndDate.HasValue && b.PeriodEndDate.Value.Date == period.PeriodEndDate.Value.Date))
-                    ?? (i == 0 ? balanceSheets.FirstOrDefault() : null);
+                    ?? (period == latestAnnual ? balanceSheets.FirstOrDefault() : null);
 
                 var existing = await _financialRepository.GetByStockIdAndPeriodKeyAsync(stock.Id, periodKey);
                 if (existing != null)
@@ -812,7 +814,7 @@ namespace StockLens_BusinessLayer.Services
                     if (period.BookValuePerShare.HasValue) existing.BookValue = period.BookValuePerShare;
                     existing.ConsolidationType = period.ConsolidationType ?? "consolidated";
 
-                    if (i == 0)
+                    if (period == latestAnnual)
                     {
                         ApplyIndianApiRatiosToEntity(existing, data, matchingBs);
                     }
@@ -853,7 +855,7 @@ namespace StockLens_BusinessLayer.Services
                         UpdatedAt = now
                     };
 
-                    if (i == 0)
+                    if (period == latestAnnual)
                     {
                         ApplyIndianApiRatiosToEntity(newEntity, data, matchingBs);
                     }

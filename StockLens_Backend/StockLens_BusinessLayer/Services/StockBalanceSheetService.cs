@@ -448,6 +448,11 @@ namespace StockLens_BusinessLayer.Services
 
             result.LineItems = new List<BalanceSheetLineItemDto>
             {
+                new() { Name = "Equity Capital", Values = sortedDbRecords.Select(b => b.EquityCapital).ToList() },
+                new() { Name = "Reserves", Values = sortedDbRecords.Select(b => b.Reserves).ToList() },
+                new() { Name = "Borrowings", Values = sortedDbRecords.Select(b => b.Borrowings).ToList() },
+                new() { Name = "Other Liabilities", Values = sortedDbRecords.Select(b => b.OtherLiabilities).ToList() },
+                new() { Name = "Total Liabilities", IsTotal = true, Values = sortedDbRecords.Select(b => b.TotalLiabilities).ToList() },
                 new() { Name = "Fixed Assets", Values = sortedDbRecords.Select(b => b.FixedAssets).ToList() },
                 new() { Name = "CWIP", Values = sortedDbRecords.Select(b => b.Cwip).ToList() },
                 new() { Name = "Investments", Values = sortedDbRecords.Select(b => b.Investments).ToList() },
