@@ -479,5 +479,95 @@ namespace StockLens_Infrastructure.ExternalServices.YahooFinanceApi
             }
             return null;
         }
+
+        public async Task<System.Collections.Generic.List<YahooDebtResponse>> GetHistoricalDebtAsync(string symbol, string exchange, CancellationToken cancellationToken = default)
+        {
+            var responses = new System.Collections.Generic.List<YahooDebtResponse>();
+            try
+            {
+                var suffix = (exchange ?? "NSE").Equals("BSE", StringComparison.OrdinalIgnoreCase) ? ".BO" : ".NS";
+                var cleanSymbol = symbol.Trim().ToUpperInvariant();
+                var searchSymbol = cleanSymbol.EndsWith(".NS") || cleanSymbol.EndsWith(".BO") ? cleanSymbol : $"{cleanSymbol}{suffix}";
+                
+                await EnsureCrumbAsync(cancellationToken);
+                var crumb = _cachedCrumb;
+                
+                long period1 = DateTimeOffset.UtcNow.AddYears(-5).ToUnixTimeSeconds();
+                long period2 = DateTimeOffset.UtcNow.AddYears(1).ToUnixTimeSeconds();
+
+                var url = $"https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/{searchSymbol}?symbol={searchSymbol}&period1={period1}&period2={period2}&type=annualLongTermDebt,annualCurrentDebt&crumb={crumb}";
+                var response = await _httpClient.GetAsync(url, cancellationToken);
+                
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Yahoo API returned {StatusCode} for {Symbol}", response.StatusCode, symbol);
+                    return responses;
+                }
+
+                var jsonString = await response.Content.ReadAsStringAsync(cancellationToken);
+                using var document = JsonDocument.Parse(jsonString);
+
+                var root = document.RootElement;
+                if (!root.TryGetProperty("timeseries", out var timeseries) || 
+                    !timeseries.TryGetProperty("result", out var resultList) || 
+                    resultList.GetArrayLength() == 0)
+                {
+                    return responses;
+                }
+
+                var debtByYear = new System.Collections.Generic.Dictionary<int, YahooDebtResponse>();
+
+                foreach (var result in resultList.EnumerateArray())
+                {
+                    if (result.TryGetProperty("annualLongTermDebt", out var ltdArray) && ltdArray.GetArrayLength() > 0)
+                    {
+                        foreach (var item in ltdArray.EnumerateArray())
+                        {
+                            if (item.TryGetProperty("reportedValue", out var reportedValue) && reportedValue.TryGetProperty("raw", out var raw) &&
+                                item.TryGetProperty("asOfDate", out var asOfDate))
+                            {
+                                if (DateTime.TryParse(asOfDate.GetString(), out var date))
+                                {
+                                    if (!debtByYear.TryGetValue(date.Year, out var d))
+                                    {
+                                        d = new YahooDebtResponse { Year = date.Year };
+                                        debtByYear[date.Year] = d;
+                                    }
+                                    d.LongTermDebt = raw.GetDecimal() / 10000000m;
+                                }
+                            }
+                        }
+                    }
+
+                    if (result.TryGetProperty("annualCurrentDebt", out var cdArray) && cdArray.GetArrayLength() > 0)
+                    {
+                        foreach (var item in cdArray.EnumerateArray())
+                        {
+                            if (item.TryGetProperty("reportedValue", out var reportedValue) && reportedValue.TryGetProperty("raw", out var raw) &&
+                                item.TryGetProperty("asOfDate", out var asOfDate))
+                            {
+                                if (DateTime.TryParse(asOfDate.GetString(), out var date))
+                                {
+                                    if (!debtByYear.TryGetValue(date.Year, out var d))
+                                    {
+                                        d = new YahooDebtResponse { Year = date.Year };
+                                        debtByYear[date.Year] = d;
+                                    }
+                                    d.ShortTermDebt = raw.GetDecimal() / 10000000m;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                responses.AddRange(debtByYear.Values);
+                return responses;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching Yahoo debt for {Symbol}", symbol);
+                return responses;
+            }
+        }
     }
 }

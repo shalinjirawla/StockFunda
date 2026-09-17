@@ -7,6 +7,7 @@ using StockLens_DataLayer.Interfaces;
 using StockLens_Infrastructure.ExternalServices.IndianApi;
 using StockLens_Infrastructure.ExternalServices.BharatStock;
 using StockLens_Infrastructure.ExternalServices.BharatStock.Models;
+using StockLens_Infrastructure.ExternalServices.YahooFinanceApi;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -24,6 +25,7 @@ namespace StockLens_BusinessLayer.Services
         private readonly IStockFinancialRepository _financialRepository;
         private readonly IFinancialProvider _financialProvider;
         private readonly ICompanyRepository _companyRepository;
+        private readonly IYahooFinanceClient _yahooClient;
         private readonly ILogger<StockBalanceSheetService> _logger;
 
         public StockBalanceSheetService(
@@ -33,6 +35,7 @@ namespace StockLens_BusinessLayer.Services
             IStockFinancialRepository financialRepository,
             IFinancialProvider financialProvider,
             ICompanyRepository companyRepository,
+            IYahooFinanceClient yahooClient,
             ILogger<StockBalanceSheetService> logger)
         {
             _apiClient = apiClient;
@@ -41,6 +44,7 @@ namespace StockLens_BusinessLayer.Services
             _financialRepository = financialRepository;
             _financialProvider = financialProvider;
             _companyRepository = companyRepository;
+            _yahooClient = yahooClient;
             _logger = logger;
         }
 
@@ -369,6 +373,49 @@ namespace StockLens_BusinessLayer.Services
                     }
                 }
 
+                // Yahoo Finance: fetch Current Debt and Long Term Debt for historical years
+                try
+                {
+                    if (dbRecords.Any(r => r.LongTermBorrowings == null && r.ShortTermBorrowings == null))
+                    {
+                        _logger.LogInformation("Fetching Yahoo Debt data historically for {Symbol}", stock.Symbol);
+                        var yahooDebts = await _yahooClient.GetHistoricalDebtAsync(stock.Symbol, stock.Exchange, cancellationToken);
+                        if (yahooDebts != null)
+                        {
+                            bool updated = false;
+                            foreach (var record in dbRecords)
+                            {
+                                if (record.PeriodEndDate.HasValue)
+                                {
+                                    var year = record.PeriodEndDate.Value.Year;
+                                    // Sometimes March 2024 is matched to FY24 or 2024 year from Yahoo
+                                    var matchingDebt = yahooDebts.FirstOrDefault(d => d.Year == year || d.Year == year - 1 || d.Year == year + 1);
+                                    // Match more strictly if possible
+                                    var exactMatch = yahooDebts.FirstOrDefault(d => d.Year == year);
+                                    var matched = exactMatch ?? matchingDebt;
+
+                                    if (record.LongTermBorrowings == null && record.ShortTermBorrowings == null)
+                                    {
+                                        // Use real data from Yahoo, or 0 if Yahoo has no debt data (debt-free company)
+                                        record.LongTermBorrowings = matched?.LongTermDebt ?? 0m;
+                                        record.ShortTermBorrowings = matched?.ShortTermDebt ?? 0m;
+                                        updated = true;
+                                        _logger.LogInformation("Updated Debt for {Symbol} year {Year} (Yahoo/Zero)", stock.Symbol, record.FiscalYear);
+                                    }
+                                }
+                            }
+                            if (updated)
+                            {
+                                await _balanceSheetRepository.SaveChangesAsync();
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to fetch Yahoo Debt for {Symbol}", stock.Symbol);
+                }
+
                 return MapToResponseDto(stock, dbRecords.ToList());
             }
             catch (Exception ex)
@@ -450,15 +497,31 @@ namespace StockLens_BusinessLayer.Services
             {
                 new() { Name = "Equity Capital", Values = sortedDbRecords.Select(b => b.EquityCapital).ToList() },
                 new() { Name = "Reserves", Values = sortedDbRecords.Select(b => b.Reserves).ToList() },
-                new() { Name = "Borrowings", Values = sortedDbRecords.Select(b => b.Borrowings).ToList() },
-                new() { Name = "Other Liabilities", Values = sortedDbRecords.Select(b => b.OtherLiabilities).ToList() },
-                new() { Name = "Total Liabilities", IsTotal = true, Values = sortedDbRecords.Select(b => b.TotalLiabilities).ToList() },
-                new() { Name = "Fixed Assets", Values = sortedDbRecords.Select(b => b.FixedAssets).ToList() },
-                new() { Name = "CWIP", Values = sortedDbRecords.Select(b => b.Cwip).ToList() },
-                new() { Name = "Investments", Values = sortedDbRecords.Select(b => b.Investments).ToList() },
-                new() { Name = "Other Assets", Values = sortedDbRecords.Select(b => b.OtherAssets).ToList() },
-                new() { Name = "Total Assets", IsTotal = true, Values = sortedDbRecords.Select(b => b.TotalAssets).ToList() }
+                new() { Name = "Borrowings", Values = sortedDbRecords.Select(b => b.Borrowings).ToList() }
             };
+
+            // If any record has Yahoo borrowing data, add them
+            if (sortedDbRecords.Any(b => b.LongTermBorrowings.HasValue || b.ShortTermBorrowings.HasValue))
+            {
+                result.LineItems.Add(new BalanceSheetLineItemDto
+                {
+                    Name = "Long-Term Borrowing",
+                    Values = sortedDbRecords.Select(b => b.LongTermBorrowings).ToList()
+                });
+                result.LineItems.Add(new BalanceSheetLineItemDto
+                {
+                    Name = "Short-Term Borrowing",
+                    Values = sortedDbRecords.Select(b => b.ShortTermBorrowings).ToList()
+                });
+            }
+
+            result.LineItems.Add(new() { Name = "Other Liabilities", Values = sortedDbRecords.Select(b => b.OtherLiabilities).ToList() });
+            result.LineItems.Add(new() { Name = "Total Liabilities", IsTotal = true, Values = sortedDbRecords.Select(b => b.TotalLiabilities).ToList() });
+            result.LineItems.Add(new() { Name = "Fixed Assets", Values = sortedDbRecords.Select(b => b.FixedAssets).ToList() });
+            result.LineItems.Add(new() { Name = "CWIP", Values = sortedDbRecords.Select(b => b.Cwip).ToList() });
+            result.LineItems.Add(new() { Name = "Investments", Values = sortedDbRecords.Select(b => b.Investments).ToList() });
+            result.LineItems.Add(new() { Name = "Other Assets", Values = sortedDbRecords.Select(b => b.OtherAssets).ToList() });
+            result.LineItems.Add(new() { Name = "Total Assets", IsTotal = true, Values = sortedDbRecords.Select(b => b.TotalAssets).ToList() });
 
             // Add Metadata
             var latestRecord = sortedDbRecords.LastOrDefault();

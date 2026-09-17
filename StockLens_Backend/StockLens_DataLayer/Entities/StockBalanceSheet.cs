@@ -37,6 +37,8 @@ namespace StockLens_DataLayer.Entities
         public decimal? EquityCapital { get; set; }
         public decimal? Reserves { get; set; }
         public decimal? Borrowings { get; set; }
+        public decimal? LongTermBorrowings { get; set; }
+        public decimal? ShortTermBorrowings { get; set; }
         public decimal? OtherLiabilities { get; set; }
         public decimal? TotalLiabilities { get; set; }
 

@@ -552,10 +552,6 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
         if (val !== null && val !== undefined) return val;
       }
     }
-    const totalBorrowings = this.getLatestBorrowings();
-    if (totalBorrowings !== null && totalBorrowings !== undefined) {
-      return Math.round(totalBorrowings * 0.78);
-    }
     return null;
   }
 
@@ -567,11 +563,6 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
         const val = item.values[item.values.length - 1];
         if (val !== null && val !== undefined) return val;
       }
-    }
-    const totalBorrowings = this.getLatestBorrowings();
-    const longTerm = this.getLatestLongTermBorrowings();
-    if (totalBorrowings !== null && totalBorrowings !== undefined && longTerm !== null && longTerm !== undefined) {
-      return Math.max(0, Math.round(totalBorrowings - longTerm));
     }
     return null;
   }

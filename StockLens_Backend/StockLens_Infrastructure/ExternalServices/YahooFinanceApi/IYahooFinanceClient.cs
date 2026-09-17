@@ -17,6 +17,13 @@ namespace StockLens_Infrastructure.ExternalServices.YahooFinanceApi
         public long? Volume { get; set; }
     }
 
+    public class YahooDebtResponse
+    {
+        public decimal? LongTermDebt { get; set; }
+        public decimal? ShortTermDebt { get; set; }
+        public int Year { get; set; }
+    }
+
     public interface IYahooFinanceClient
     {
         /// <summary>
@@ -29,5 +36,6 @@ namespace StockLens_Infrastructure.ExternalServices.YahooFinanceApi
         Task<System.Collections.Generic.List<StockLens_Infrastructure.ExternalServices.IndianApi.Models.IndianApiPriceRecord>> GetHistoricalPricesAsync(string symbol, string exchange, CancellationToken cancellationToken = default);
         Task<YahooLiveQuoteDto?> GetLiveQuoteAsync(string symbol, string? exchange = "NSE", CancellationToken cancellationToken = default);
         Task<System.Collections.Generic.List<StockLens_Infrastructure.ExternalServices.IndianApi.IndianApiFinancialPeriodDto>> GetQuarterlyIncomeStatementsAsync(string symbol, string? exchange = "NSE", CancellationToken cancellationToken = default);
+        Task<System.Collections.Generic.List<YahooDebtResponse>> GetHistoricalDebtAsync(string symbol, string exchange, CancellationToken cancellationToken = default);
     }
 }
