@@ -9,6 +9,8 @@ export interface CashflowYoYChange {
   capexGrowth?: number | null; // YoY %
   netProfitChange?: number | null;
   netProfitGrowth?: number | null; // YoY %
+  epsChange?: number | null;
+  epsGrowth?: number | null; // YoY %
   revenueChange?: number | null;
   revenueGrowth?: number | null; // YoY %
   netCashFlowChange?: number | null;
@@ -40,6 +42,7 @@ export interface StockRatios {
   sectorPe?: number | null;
   sectorPeSector?: string | null;
   sectorPeAsOfDate?: string | null;
+  pegRatio?: number | null;
 }
 
 
@@ -54,6 +57,8 @@ export interface CashflowSummary {
   operatingProfit?: number | null;
   netProfit?: number | null;
   eps?: number | null;
+  interest?: number | null;
+  depreciation?: number | null;
   otherEquity?: number | null;
   totalEquity?: number | null;
   cfoToOperatingProfitRatio?: number | null;

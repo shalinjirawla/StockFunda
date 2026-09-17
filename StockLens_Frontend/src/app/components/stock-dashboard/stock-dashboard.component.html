@@ -102,9 +102,11 @@
         <div class="stat-52w-box" title="52-Week Price Range (Low / High)">
           <span class="stat-52w-label">52W H/L:</span>
           <div class="stat-52w-values">
-            <span class="val-high" title="52-Week High"><span class="tag-sub">H</span> ₹{{ formatNumber(high, 0) }}</span>
+            <span class="val-high" title="52-Week High"><span class="tag-sub">H</span> ₹{{ formatNumber(high, 0)
+              }}</span>
             <span class="val-sep">/</span>
-            <span class="val-low" title="52-Week Low"><span class="tag-sub">L</span> ₹{{ formatNumber(cashflowResponse()?.ratios?.week52Low, 0) }}</span>
+            <span class="val-low" title="52-Week Low"><span class="tag-sub">L</span> ₹{{
+              formatNumber(cashflowResponse()?.ratios?.week52Low, 0) }}</span>
           </div>
         </div>
         } @else {
@@ -388,7 +390,7 @@
           }
         </div>
 
-        <div class="card-inner-content">
+        <div class="card-inner-content split-content-col ownership-container">
           @if (shareholdingResponse()?.currentPeriod; as sh) {
           <!-- 4 Ownership Metrics Quad -->
           <div class="ownership-quad-grid">
@@ -514,7 +516,7 @@
           }
         </div>
 
-        <div class="card-inner-content">
+        <div class="card-inner-content split-content-col">
           @if (quartersResponse()?.summary; as q) {
           <div class="quarter-metrics-stack">
             <!-- 1. Revenue / Sales -->
@@ -558,26 +560,44 @@
               <span class="q-val text-green">{{ formatCrores(q.operatingProfit) }}</span>
             </div>
 
-            <!-- 4. Trio Row: EPS, Tax, Depreciation -->
+            <!-- 4. Sub Metrics Grid: 2 cards per row (EPS, Tax, Depreciation, Interest) -->
             <div class="q-trio-row">
               <div class="q-sub-box">
-                <span class="q-label">EPS</span>
+                <div class="q-row-top">
+                  <span class="q-label">EPS</span>
+                  @if (quartersResponse()?.qoQGrowth?.epsGrowthPercent; as g) {
+                  <span class="mini-delta" [ngClass]="getChangeClass(g)">QoQ: {{ formatPercent(g) }}</span>
+                  }
+                </div>
                 <span class="q-val text-cyan">{{ formatEps(q.eps) }}</span>
-                @if (quartersResponse()?.qoQGrowth?.epsGrowthPercent; as g) {
-                <span class="mini-delta" [ngClass]="getChangeClass(g)">QoQ: {{ formatPercent(g) }}</span>
-                }
               </div>
 
               <div class="q-sub-box">
-                <span class="q-label">Tax</span>
+                <div class="q-row-top">
+                  <span class="q-label">Tax</span>
+                  <span class="mini-tag">{{ q.taxPercentage ? (q.taxPercentage + '%') : 'Tax Exp' }}</span>
+                </div>
                 <span class="q-val text-orange">{{ formatCrores(q.tax) }}</span>
-                <span class="mini-tag">{{ q.taxPercentage ? (q.taxPercentage + '%') : 'Tax Exp' }}</span>
               </div>
 
               <div class="q-sub-box">
-                <span class="q-label">Depreciation</span>
+                <div class="q-row-top">
+                  <span class="q-label">Depreciation</span>
+                  <span class="mini-tag">Non-Cash</span>
+                </div>
                 <span class="q-val text-purple">{{ formatCrores(q.depreciation) }}</span>
-                <span class="mini-tag">Non-Cash</span>
+              </div>
+
+              <div class="q-sub-box">
+                <div class="q-row-top">
+                  <span class="q-label">Interest</span>
+                  @if (quartersResponse()?.qoQGrowth?.interestGrowthPercent; as g) {
+                  <span class="mini-delta" [ngClass]="getChangeClass(g)">QoQ: {{ formatPercent(g) }}</span>
+                  } @else {
+                  <span class="mini-tag">Finance</span>
+                  }
+                </div>
+                <span class="q-val text-amber">{{ formatCrores(q.interest) }}</span>
               </div>
             </div>
           </div>
@@ -610,25 +630,6 @@
           <div class="sub-section">
             <span class="sub-section-heading">CASH FLOW STATEMENTS</span>
             <div class="cflow-list">
-              <!-- CFO -->
-              <div class="cflow-item">
-                <div class="cf-left">
-                  <span class="cf-name">CFO (Operating Cash)</span>
-                  @if (cashflowResponse()?.summary?.yoYChange?.operatingCashFlowGrowth; as g) {
-                  <span class="mini-delta" [ngClass]="getChangeClass(g)">YoY: {{ formatPercent(g) }}</span>
-                  }
-                </div>
-                <span class="cf-val text-accent">{{ formatCrores(cashflowResponse()?.summary?.operatingCashFlow) }}</span>
-              </div>
-
-              <!-- Capex -->
-              <div class="cflow-item">
-                <div class="cf-left">
-                  <span class="cf-name">Capex (Fixed Investment)</span>
-                </div>
-                <span class="cf-val text-orange">{{ formatCrores(cashflowResponse()?.summary?.capex) }}</span>
-              </div>
-
               <!-- FCF -->
               <div class="cflow-item">
                 <div class="cf-left">
@@ -646,6 +647,21 @@
                   <span class="cf-name">Net Cash Flow</span>
                 </div>
                 <span class="cf-val">{{ formatCrores(cashflowResponse()?.summary?.netCashFlow) }}</span>
+              </div>
+
+              <!-- CFO / OP -->
+              <div class="cflow-item">
+                <div class="cf-left">
+                  <span class="cf-name">CFO / OP</span>
+                  @if (getCfoToOpRatio(); as ratio) {
+                  <span class="mini-delta"
+                    [ngClass]="(ratio >= 0.8 || ratio >= 80) ? 'positive' : ((ratio >= 0.5 || ratio >= 50) ? 'neutral' : 'negative')">
+                    {{ (ratio >= 0.8 || ratio >= 80) ? 'High Conv.' : ((ratio >= 0.5 || ratio >= 50) ? 'Moderate' :
+                    'Low') }}
+                  </span>
+                  }
+                </div>
+                <span class="cf-val text-accent">{{ formatCfoToOp() }}</span>
               </div>
             </div>
           </div>
@@ -669,14 +685,6 @@
                 </div>
                 <span class="cf-val text-cyan">{{ formatCrores(getLatestShortTermBorrowings()) }}</span>
               </div>
-
-              <!-- Interest -->
-              <div class="cflow-item">
-                <div class="cf-left">
-                  <span class="cf-name">Interest</span>
-                </div>
-                <span class="cf-val text-orange">{{ formatCrores(quartersResponse()?.summary?.interest) }}</span>
-              </div>
             </div>
           </div>
         </div>
@@ -697,7 +705,6 @@
             </svg>
             <span class="card-title">BALANCE SHEET &amp; VALUATION</span>
           </div>
-          <span class="period-tag">5Y Dynamics</span>
         </div>
 
         <div class="card-inner-content split-content-col">
@@ -706,21 +713,12 @@
             <span class="sub-section-heading">BALANCE SHEET ESSENTIALS</span>
             <div class="cflow-list">
               <div class="cflow-item">
-                <div class="cf-left"><span class="cf-name">Total Equity / Net Worth</span></div>
-                <span class="cf-val">{{ formatCrores(cashflowResponse()?.summary?.totalEquity ||
-                  cashflowResponse()?.ratios?.equityCapital) }}</span>
-              </div>
-              <div class="cflow-item">
                 <div class="cf-left"><span class="cf-name">Fixed Assets / Total</span></div>
                 <span class="cf-val text-cyan">{{ formatCrores(getLatestFixedAssets()) }}</span>
               </div>
               <div class="cflow-item">
                 <div class="cf-left"><span class="cf-name">Book Value per Share</span></div>
                 <span class="cf-val">{{ formatCurrency(cashflowResponse()?.ratios?.bookValue) }}</span>
-              </div>
-              <div class="cflow-item">
-                <div class="cf-left"><span class="cf-name">Total Debt Position</span></div>
-                <span class="cf-val text-green">Stable / Low</span>
               </div>
             </div>
           </div>
@@ -737,11 +735,10 @@
               </div>
 
               <!-- 2. Dedicated PEG Ratio -->
-              <div class="cflow-item" title="Price/Earnings to Growth Ratio">
+              <div class="cflow-item">
                 <div class="cf-left"><span class="cf-name">PEG Ratio</span></div>
                 <span class="cf-val text-accent">
-                  <b>{{ getPegInfo().peg ? (getPegInfo().peg + 'x') : '1.15x' }}</b>
-                  <span class="mini-delta" [ngClass]="getPegInfo().statusClass">{{ getPegInfo().label }}</span>
+                  <b>{{ getPegRatio() !== null && getPegRatio() !== undefined ? (getPegRatio() + 'x') : '—' }}</b>
                 </span>
               </div>
 

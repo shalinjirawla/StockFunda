@@ -23,6 +23,7 @@ export interface QuarterlyGrowth {
   netProfitGrowthPercent?: number | null;
   epsGrowthPercent?: number | null;
   depreciationGrowthPercent?: number | null;
+  interestGrowthPercent?: number | null;
   taxGrowthPercent?: number | null;
 }
 

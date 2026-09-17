@@ -94,6 +94,7 @@ namespace StockLens_BusinessLayer.Services
                 var isStale = existingQuarters.Count == 0 ||
                               existingQuarters.All(q => (DateTime.UtcNow - q.LastSyncedAt).TotalHours > 24) ||
                               existingQuarters.Any(q => q.Depreciation == null && q.Revenue.HasValue) ||
+                              existingQuarters.Any(q => q.Interest == null && q.Revenue.HasValue) ||
                               existingQuarters.GroupBy(q => q.PeriodEndDate.HasValue ? q.PeriodEndDate.Value.ToString("yyyy-MM") : q.FiscalYear).Any(g => g.Count() > 1);
 
                 if (forceRefresh || isStale)
@@ -357,6 +358,7 @@ namespace StockLens_BusinessLayer.Services
                     NetProfitGrowthPercent = CalculateGrowth(latest.NetProfit, prev.NetProfit),
                     EpsGrowthPercent = CalculateGrowth(latest.Eps, prev.Eps),
                     DepreciationGrowthPercent = CalculateGrowth(latest.Depreciation, prev.Depreciation),
+                    InterestGrowthPercent = CalculateGrowth(latest.Interest, prev.Interest),
                     TaxGrowthPercent = CalculateGrowth(latest.Tax, prev.Tax)
                 };
             }
@@ -372,6 +374,7 @@ namespace StockLens_BusinessLayer.Services
                     NetProfitGrowthPercent = CalculateGrowth(latest.NetProfit, yoy.NetProfit),
                     EpsGrowthPercent = CalculateGrowth(latest.Eps, yoy.Eps),
                     DepreciationGrowthPercent = CalculateGrowth(latest.Depreciation, yoy.Depreciation),
+                    InterestGrowthPercent = CalculateGrowth(latest.Interest, yoy.Interest),
                     TaxGrowthPercent = CalculateGrowth(latest.Tax, yoy.Tax)
                 };
             }

@@ -111,7 +111,7 @@ namespace StockLens_BusinessLayer.Services
             try
             {
                 // Check DB for recent records
-                var dbRecords = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 3);
+                var dbRecords = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 5);
 
                 bool needsRefresh = forceRefresh;
                 if (!needsRefresh && dbRecords.Any())
@@ -147,15 +147,15 @@ namespace StockLens_BusinessLayer.Services
                         if (rawBalanceSheet != null && rawBalanceSheet.Count > 0)
                         {
                             var periods = ExtractPeriods(rawBalanceSheet);
-                            var last3Periods = periods.OrderByDescending(p => p.ParsedDate).Take(3).ToList();
+                            var last5Periods = periods.OrderByDescending(p => p.ParsedDate).Take(5).ToList();
                             
-                            if (last3Periods.Count > 0)
+                            if (last5Periods.Count > 0)
                             {
                                 await _balanceSheetRepository.RemoveRangeAsync(dbRecords);
                                 
                                 var newRecords = new List<StockBalanceSheet>();
                                 
-                                foreach (var period in last3Periods)
+                                foreach (var period in last5Periods)
                                 {
                                     var record = new StockBalanceSheet
                                     {
@@ -187,7 +187,7 @@ namespace StockLens_BusinessLayer.Services
                                 await _balanceSheetRepository.AddRangeAsync(newRecords);
                                 await _balanceSheetRepository.SaveChangesAsync();
                                 
-                                dbRecords = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 3);
+                                dbRecords = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 5);
                             }
                         }
                     }
@@ -206,7 +206,7 @@ namespace StockLens_BusinessLayer.Services
                             if (overview?.Financials != null && overview.Financials.Count > 0)
                             {
                                 var newRecords = new List<StockBalanceSheet>();
-                                foreach (var fin in overview.Financials.Take(3))
+                                foreach (var fin in overview.Financials.Take(5))
                                 {
                                     var parsedDate = fin.PeriodEndDate ?? DateTime.UtcNow;
                                     var totalAssets = fin.TotalAssets;
@@ -240,7 +240,7 @@ namespace StockLens_BusinessLayer.Services
                                 {
                                     await _balanceSheetRepository.AddRangeAsync(newRecords);
                                     await _balanceSheetRepository.SaveChangesAsync();
-                                    dbRecords = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 3);
+                                    dbRecords = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 5);
                                 }
                             }
                         }
@@ -256,7 +256,7 @@ namespace StockLens_BusinessLayer.Services
                         try
                         {
                             _logger.LogInformation("Tier 3: Checking StockFinancial table for existing records of {Symbol}", stock.Symbol);
-                            var financials = await _financialRepository.GetFinancialsByStockIdAsync(stock.Id, "annual", 3);
+                            var financials = await _financialRepository.GetFinancialsByStockIdAsync(stock.Id, "annual", 5);
                             if (financials != null && financials.Count > 0)
                             {
                                 var newRecords = new List<StockBalanceSheet>();
@@ -293,7 +293,7 @@ namespace StockLens_BusinessLayer.Services
                                 {
                                     await _balanceSheetRepository.AddRangeAsync(newRecords);
                                     await _balanceSheetRepository.SaveChangesAsync();
-                                    dbRecords = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 3);
+                                    dbRecords = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 5);
                                 }
                             }
                         }
@@ -309,7 +309,7 @@ namespace StockLens_BusinessLayer.Services
                         try
                         {
                             _logger.LogInformation("Tier 4: Checking BharatStock Financial Provider for {Symbol}", stock.Symbol);
-                            var bRecords = await _financialProvider.GetFinancialsAsync(stock.Symbol, "annual", 1, 3, cancellationToken);
+                            var bRecords = await _financialProvider.GetFinancialsAsync(stock.Symbol, "annual", 1, 5, cancellationToken);
                             if (bRecords != null && bRecords.Count > 0)
                             {
                                 var newRecords = new List<StockBalanceSheet>();
@@ -346,7 +346,7 @@ namespace StockLens_BusinessLayer.Services
                                 {
                                     await _balanceSheetRepository.AddRangeAsync(newRecords);
                                     await _balanceSheetRepository.SaveChangesAsync();
-                                    dbRecords = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 3);
+                                    dbRecords = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 5);
                                 }
                             }
                         }
@@ -363,7 +363,7 @@ namespace StockLens_BusinessLayer.Services
                         var fallbackRecords = GenerateFallbackBalanceSheets(stock);
                         await _balanceSheetRepository.AddRangeAsync(fallbackRecords);
                         await _balanceSheetRepository.SaveChangesAsync();
-                        dbRecords = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 3);
+                        dbRecords = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 5);
                     }
 
                     if (!dbRecords.Any())
@@ -445,6 +445,8 @@ namespace StockLens_BusinessLayer.Services
 
             var periods = new[]
             {
+                (Fy: "FY22", Date: new DateTime(2022, 3, 31), Multiplier: 0.68m),
+                (Fy: "FY23", Date: new DateTime(2023, 3, 31), Multiplier: 0.76m),
                 (Fy: "FY24", Date: new DateTime(2024, 3, 31), Multiplier: 0.84m),
                 (Fy: "FY25", Date: new DateTime(2025, 3, 31), Multiplier: 0.92m),
                 (Fy: "FY26", Date: new DateTime(2026, 3, 31), Multiplier: 1.00m)
@@ -489,8 +491,8 @@ namespace StockLens_BusinessLayer.Services
         {
             var result = new BalanceSheetResponseDto { Symbol = stock.Symbol };
 
-            // Construct Response DTO from dbRecords (which now only contains max 3 records)
-            var sortedDbRecords = dbRecords.OrderBy(b => b.PeriodEndDate).ToList(); // Sort chronologically for UI
+            // Construct Response DTO from dbRecords sorted chronologically for UI
+            var sortedDbRecords = dbRecords.OrderBy(b => b.PeriodEndDate).ToList();
             result.Periods = sortedDbRecords.Select(b => b.FiscalYear).ToList();
 
             result.LineItems = new List<BalanceSheetLineItemDto>
@@ -533,16 +535,22 @@ namespace StockLens_BusinessLayer.Services
                 result.LastSyncedAt = latestRecord.LastSyncedAt.ToString("O");
             }
 
-            // Calculate YoY Growth Percentage for Total Assets
+            // Calculate 5Y Total Asset Growth Percentage
             if (sortedDbRecords.Count >= 2)
             {
-                // Assuming sortedDbRecords is sorted oldest to newest (by PeriodEndDate ascending)
+                // sortedDbRecords is sorted oldest to newest (by PeriodEndDate ascending)
                 var latest = sortedDbRecords.Last().TotalAssets;
-                var previous = sortedDbRecords[^2].TotalAssets;
-                
-                if (latest != null && previous != null && previous != 0)
+
+                // Compare with 5 years ago if 5+ records exist, otherwise oldest available baseline record
+                var baseRecord = sortedDbRecords.Count >= 5
+                    ? sortedDbRecords[sortedDbRecords.Count - 5]
+                    : sortedDbRecords.First();
+
+                var baseAssets = baseRecord.TotalAssets;
+
+                if (latest != null && baseAssets != null && baseAssets != 0)
                 {
-                    result.AssetGrowthPercentage = Math.Round(((latest.Value - previous.Value) / Math.Abs(previous.Value)) * 100, 2);
+                    result.AssetGrowthPercentage = Math.Round(((latest.Value - baseAssets.Value) / Math.Abs(baseAssets.Value)) * 100, 2);
                 }
             }
 

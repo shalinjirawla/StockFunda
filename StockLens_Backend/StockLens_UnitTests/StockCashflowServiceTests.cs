@@ -156,6 +156,10 @@ namespace StockLens_UnitTests
             // Growth = (69197 - 55480) / 55480 * 100 ≈ 24.72%
             result.Summary.YoYChange.FreeCashFlowChange.Should().Be(13717.0m);
             result.Summary.YoYChange.FreeCashFlowGrowth.Should().Be(24.72m);
+
+            // Verify Trailing EPS Growth: FY26 (59.69) vs FY25 (58.60) => Change: 1.09, Growth: 1.86%
+            result.Summary.YoYChange.EpsChange.Should().Be(1.09m);
+            result.Summary.YoYChange.EpsGrowth.Should().Be(1.86m);
         }
 
         [Fact]
@@ -515,7 +519,7 @@ namespace StockLens_UnitTests
         }
 
         [Fact]
-        public async Task GetCashflowBySymbolAsync_TotalEquity_Priority2_ShouldCalculateFromAssetsAndLiabilities()
+        public async Task GetCashflowBySymbolAsync_TotalEquity_WhenNotReported_ShouldBeNull()
         {
             // Arrange
             var stock = new Stock
@@ -551,10 +555,9 @@ namespace StockLens_UnitTests
             var result = await _service.GetCashflowBySymbolAsync("INFY", "NSE", forceRefresh: true);
 
             // Assert
-            // Priority 2: 125800 - 39350 = 86450
             result.Ratios.Should().NotBeNull();
-            result.Ratios!.TotalEquity.Should().Be(86450.0m);
-            result.Ratios!.TotalEquitySource.Should().Be("Calculated (Total Assets - Total Liabilities)");
+            result.Ratios!.TotalEquity.Should().BeNull();
+            result.Ratios!.TotalEquitySource.Should().BeNull();
         }
 
         [Fact]
@@ -597,67 +600,6 @@ namespace StockLens_UnitTests
             result.Ratios.Should().NotBeNull();
             result.Ratios!.TotalEquity.Should().BeNull();
             result.Ratios!.TotalEquitySource.Should().BeNull();
-        }
-
-        [Fact]
-        public async Task GetCashflowBySymbolAsync_TotalEquity_PriorityBalanceSheet_ShouldCalculateFromTotalAssetsMinusBorrowingsAndLiabilities()
-        {
-            // Arrange
-            var stock = new Stock
-            {
-                Symbol = "RELIANCE",
-                Company = new Company { CompanyName = "Reliance Industries Limited", Symbol = "RELIANCE" },
-                Exchange = "NSE"
-            };
-            await _stockRepository.AddAsync(stock);
-            await _stockRepository.SaveChangesAsync();
-
-            // Add Balance Sheet record with TotalAssets, Borrowings, OtherLiabilities
-            // Formula: 2177546 - (402962 + 870554) = 904030
-            var bsRecord = new StockBalanceSheet
-            {
-                StockId = stock.Id,
-                PeriodKey = "annual-2026-03-31",
-                PeriodType = "annual",
-                FiscalYear = "Mar 2026",
-                PeriodEndDate = new DateTime(2026, 3, 31),
-                TotalAssets = 2177546.0m,
-                Borrowings = 402962.0m,
-                OtherLiabilities = 870554.0m,
-                EquityCapital = 13532.0m,
-                Reserves = 890498.0m,
-                Source = "IndianAPI",
-                LastSyncedAt = DateTime.UtcNow
-            };
-            await _balanceSheetRepository.AddRangeAsync(new[] { bsRecord });
-            await _balanceSheetRepository.SaveChangesAsync();
-
-            var mockRecords = new List<BharatStockFinancialRecord>
-            {
-                new()
-                {
-                    PeriodType = "annual",
-                    FiscalYear = "Mar 2026",
-                    PeriodEndDateString = "2026-03-31",
-                    Revenue = 900000.0m,
-                    NetProfit = 70000.0m,
-                    TotalEquity = null // Rely on Balance Sheet
-                }
-            };
-
-            _mockFinancialProvider
-                .Setup(p => p.GetFinancialsAsync("RELIANCE", "annual", 1, It.IsAny<int>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(mockRecords);
-
-            // Act
-            var result = await _service.GetCashflowBySymbolAsync("RELIANCE", "NSE", forceRefresh: true);
-
-            // Assert
-            // 2177546 - (402962 + 870554) = 904030
-            result.Ratios.Should().NotBeNull();
-            result.Ratios!.TotalEquity.Should().Be(904030.0m);
-            result.Ratios!.TotalEquityPeriod.Should().Be("Mar 2026");
-            result.Ratios!.TotalEquitySource.Should().Be("Calculated (Total Assets - (Borrowings + Other Liabilities))");
         }
 
         [Fact]

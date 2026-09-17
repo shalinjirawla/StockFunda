@@ -134,6 +134,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
 
         this.cashflowService.getCashflowBySymbol(symbol, exchange, false).subscribe({
           next: (data) => {
+            debugger
             if (data && data.ratios && this.selectedSymbol() === symbol) {
               this.cashflowResponse.set(data);
             }
@@ -343,6 +344,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
 
     this.cashflowService.getCashflowBySymbol(symbol, exchange, isRefresh).subscribe({
       next: (data) => {
+        console.log(`[Cashflow API Response for ${symbol}]`, data);
         this.cashflowResponse.set(data);
         this.isCashflowRefreshing.set(false);
         this.cashflowLoadingState.set(data && data.summary ? 'success' : 'empty');
@@ -427,18 +429,6 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     return this.newsResponse()?.news || [];
   }
 
-  // PEG Calculation Helper
-  getPegRatio(): number | null {
-    const pe = this.cashflowResponse()?.ratios?.peRatio;
-    const growth = this.quartersResponse()?.yoYGrowth?.netProfitGrowthPercent ??
-      this.cashflowResponse()?.summary?.yoYChange?.netProfitGrowth;
-
-    if (pe && growth && growth > 0) {
-      return +(pe / growth).toFixed(2);
-    }
-    return null;
-  }
-
   // Visual Quality Bars
   getRoeProgress(val?: number | null): number {
     if (!val || isNaN(val) || val <= 0) return 0;
@@ -463,20 +453,20 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
   // Formatters
   formatCurrency(val?: number | null): string {
     if (val === null || val === undefined || isNaN(val)) return '—';
-    return '₹ ' + val.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 0 });
+    return '₹' + val.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 0 });
   }
 
   formatMarketCap(val?: number | null): string {
     if (val === null || val === undefined || isNaN(val)) return '—';
     if (val >= 10000000) {
-      return '₹ ' + (val / 10000000).toLocaleString('en-IN', { maximumFractionDigits: 0 }) + ' Cr.';
+      return '₹' + (val / 10000000).toLocaleString('en-IN', { maximumFractionDigits: 0 }) + ' Cr.';
     }
-    return '₹ ' + val.toLocaleString('en-IN', { maximumFractionDigits: 0 }) + ' Cr.';
+    return '₹' + val.toLocaleString('en-IN', { maximumFractionDigits: 0 }) + ' Cr.';
   }
 
   formatCrores(val?: number | null): string {
     if (val === null || val === undefined || isNaN(val)) return '—';
-    return '₹ ' + Math.round(val).toLocaleString('en-IN') + ' Cr.';
+    return '₹' + Math.round(val).toLocaleString('en-IN') + ' Cr.';
   }
 
   formatRatio(val?: number | null): string {
@@ -497,7 +487,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
 
   formatEps(val?: number | null): string {
     if (val === null || val === undefined || isNaN(val)) return '—';
-    return '₹ ' + val.toFixed(2);
+    return '₹' + val.toFixed(2);
   }
 
   formatNumber(val?: number | null, decimals: number = 0): string {
@@ -569,9 +559,9 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
 
   getDebtToEquity(): { ratio: number | null, label: string, statusClass: string } {
     const totalBorrowings = this.getLatestBorrowings();
-    const totalEquity = this.cashflowResponse()?.summary?.totalEquity || 
-                        this.cashflowResponse()?.ratios?.totalEquity ||
-                        this.cashflowResponse()?.ratios?.equityCapital;
+    const totalEquity = this.cashflowResponse()?.summary?.totalEquity ||
+      this.cashflowResponse()?.ratios?.totalEquity ||
+      this.cashflowResponse()?.ratios?.equityCapital;
 
     if (totalBorrowings !== null && totalEquity && totalEquity > 0) {
       const deRatio = +(totalBorrowings / totalEquity).toFixed(2);
@@ -616,8 +606,8 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
   }
 
   getInterestCoverageRatio(): { icr: number | null, label: string, statusClass: string } {
-    const op = this.quartersResponse()?.summary?.operatingProfit;
-    const interest = this.quartersResponse()?.summary?.interest;
+    const op = this.cashflowResponse()?.summary?.operatingProfit || this.quartersResponse()?.summary?.operatingProfit;
+    const interest = this.cashflowResponse()?.summary?.interest || this.quartersResponse()?.summary?.interest;
     if (op && interest && interest > 0) {
       const val = +(op / interest).toFixed(1);
       if (val >= 4) return { icr: val, label: 'High Cov.', statusClass: 'text-green' };
@@ -628,14 +618,34 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     return { icr: null, label: 'Safe', statusClass: 'text-green' };
   }
 
-  getPegInfo(): { peg: number | null, label: string, statusClass: string } {
-    const peg = this.getPegRatio();
-    if (peg !== null && !isNaN(peg)) {
-      if (peg < 1.0) return { peg, label: 'Attractive', statusClass: 'text-green' };
-      if (peg <= 1.5) return { peg, label: 'Fair Growth', statusClass: 'text-cyan' };
-      return { peg, label: 'Premium', statusClass: 'text-amber' };
+  getPegRatio(): number | null {
+    const directPeg = this.cashflowResponse()?.ratios?.pegRatio ??
+      this.cashflowResponse()?.summary?.ratios?.pegRatio;
+
+    if (directPeg !== null && directPeg !== undefined && !isNaN(directPeg) && directPeg > 0) {
+      return directPeg;
     }
-    return { peg: 1.15, label: 'Fair Growth', statusClass: 'text-cyan' };
+    return null;
+  }
+
+  getCfoToOpRatio(): number | null {
+    const fromSummary = this.cashflowResponse()?.summary?.cfoToOperatingProfitRatio;
+    if (fromSummary !== null && fromSummary !== undefined && !isNaN(fromSummary)) {
+      return fromSummary;
+    }
+    const cfo = this.cashflowResponse()?.summary?.operatingCashFlow;
+    const op = this.cashflowResponse()?.summary?.operatingProfit;
+    if (cfo !== null && cfo !== undefined && op !== null && op !== undefined && op !== 0) {
+      return +(cfo / op).toFixed(2);
+    }
+    return null;
+  }
+
+  formatCfoToOp(value?: number | null): string {
+    const val = value !== undefined ? value : this.getCfoToOpRatio();
+    if (val === null || val === undefined || isNaN(val)) return '—';
+    const pct = val > 5 ? val : val * 100;
+    return `${Math.round(pct)}%`;
   }
 
   openExternalUrl(url?: string): void {

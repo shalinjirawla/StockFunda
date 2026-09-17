@@ -338,6 +338,9 @@ namespace StockLens_UnitTests
                 _output.WriteLine($"[{sym}] Cached Roe: {cached?.Ratios?.Roe}");
                 _output.WriteLine($"[{sym}] Cached Roce: {cached?.Ratios?.Roce}");
                 _output.WriteLine($"[{sym}] Cached PeRatio: {cached?.Ratios?.PeRatio}");
+                _output.WriteLine($"[{sym}] Cached PegRatio: {cached?.Ratios?.PegRatio}");
+                _output.WriteLine($"[{sym}] Cached EpsGrowth: {cached?.Summary?.YoYChange?.EpsGrowth}");
+                _output.WriteLine($"[{sym}] Cached NetProfitGrowth: {cached?.Summary?.YoYChange?.NetProfitGrowth}");
                 _output.WriteLine($"[{sym}] Cached SectorPe: {cached?.Ratios?.SectorPe}");
                 _output.WriteLine($"[{sym}] Cached SectorName: {cached?.Ratios?.SectorPeSector}");
 

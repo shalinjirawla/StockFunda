@@ -329,6 +329,10 @@ namespace StockLens_Infrastructure.DataContext
                     .HasPrecision(18, 2)
                     .IsRequired(false);
 
+                entity.Property(f => f.PegRatio)
+                    .HasPrecision(18, 2)
+                    .IsRequired(false);
+
                 entity.Property(f => f.PbRatio)
                     .HasPrecision(18, 2)
                     .IsRequired(false);

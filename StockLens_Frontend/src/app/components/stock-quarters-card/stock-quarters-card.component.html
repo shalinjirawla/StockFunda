@@ -183,6 +183,27 @@
           }
         </div>
       </div>
+
+      <!-- 6. Interest -->
+      <div class="kpi-card">
+        <div class="kpi-top">
+          <span class="kpi-label">Interest</span>
+          <span class="kpi-tag amber">Finance</span>
+        </div>
+        <div class="kpi-value">{{ formatCurrency(current.interest) }}</div>
+        <div class="kpi-bottom">
+          @if (quarters.qoQGrowth.interestGrowthPercent !== null && quarters.qoQGrowth.interestGrowthPercent !== undefined) {
+            <span class="growth-badge" [class.positive]="quarters.qoQGrowth.interestGrowthPercent <= 0" [class.negative]="quarters.qoQGrowth.interestGrowthPercent > 0">
+              QoQ: {{ formatPercent(quarters.qoQGrowth.interestGrowthPercent) }}
+            </span>
+          }
+          @if (quarters.yoYGrowth.interestGrowthPercent !== null && quarters.yoYGrowth.interestGrowthPercent !== undefined) {
+            <span class="growth-badge yoy" [class.positive]="quarters.yoYGrowth.interestGrowthPercent <= 0" [class.negative]="quarters.yoYGrowth.interestGrowthPercent > 0">
+              YoY: {{ formatPercent(quarters.yoYGrowth.interestGrowthPercent) }}
+            </span>
+          }
+        </div>
+      </div>
     </div>
 
     <!-- 3. Screener-Style 4-Quarter Historical Financial Table -->
@@ -255,6 +276,16 @@
               @for (q of displayedHistory; track q.periodKey || q.period) {
                 <td class="data-cell text-purple" [class.selected-col]="current.period === q.period">
                   {{ formatNumber(q.depreciation, 0) }}
+                </td>
+              }
+            </tr>
+
+            <!-- 6. Interest -->
+            <tr>
+              <td class="sticky-col line-item-label">Interest</td>
+              @for (q of displayedHistory; track q.periodKey || q.period) {
+                <td class="data-cell text-amber" [class.selected-col]="current.period === q.period">
+                  {{ formatNumber(q.interest, 0) }}
                 </td>
               }
             </tr>

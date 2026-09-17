@@ -17,7 +17,7 @@ namespace StockLens_Infrastructure.Repositories
             _context = context;
         }
 
-        public async Task<List<StockBalanceSheet>> GetRecentByStockIdAsync(int stockId, int limit = 3)
+        public async Task<List<StockBalanceSheet>> GetRecentByStockIdAsync(int stockId, int limit = 5)
         {
             return await _context.StockBalanceSheets
                 .Where(b => b.StockId == stockId)

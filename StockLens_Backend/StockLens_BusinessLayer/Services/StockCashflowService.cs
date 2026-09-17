@@ -107,7 +107,7 @@ namespace StockLens_BusinessLayer.Services
             var stock = await _stockRepository.GetBySymbolAsync(cleanSymbol);
             if (stock != null)
             {
-                var dbFinancials = await _financialRepository.GetFinancialsByStockIdAsync(stock.Id, "annual", 1);
+                var dbFinancials = await _financialRepository.GetFinancialsByStockIdAsync(stock.Id, "annual", 5);
                 if (dbFinancials != null && dbFinancials.Count > 0)
                 {
                     var cur = dbFinancials[0];
@@ -123,7 +123,8 @@ namespace StockLens_BusinessLayer.Services
                         cur.Week52High == null ||
                         cur.Week52Low == null ||
                         cur.Roce == null ||
-                        cur.SectorPe == null)
+                        cur.SectorPe == null ||
+                        dbFinancials.Count < 2)
                     {
                         if (_indianApiClient != null)
                         {
@@ -132,7 +133,12 @@ namespace StockLens_BusinessLayer.Services
                                 var overview = await _indianApiClient.GetStockFinancialsAndOverviewAsync(cleanSymbol, stock.Exchange, cancellationToken);
                                 if (overview != null)
                                 {
-                                    ApplyIndianApiRatiosToEntity(cur, overview, latestBsDb);
+                                    var annualPeriods = overview.Financials
+                                        .Where(p => string.Equals(p.PeriodType, "annual", StringComparison.OrdinalIgnoreCase))
+                                        .OrderByDescending(p => p.PeriodEndDate ?? DateTime.MinValue)
+                                        .ToList();
+                                    var prevAnn = annualPeriods.Count > 1 ? annualPeriods[1] : null;
+                                    ApplyIndianApiRatiosToEntity(cur, overview, latestBsDb, prevAnn);
                                 }
                             }
                             catch (Exception ex)
@@ -156,6 +162,11 @@ namespace StockLens_BusinessLayer.Services
                             cur.PeRatio = Math.Round(cur.CurrentPrice.Value / cur.TtmEps.Value, 2);
                         if (cur.BookValue.HasValue && cur.BookValue.Value > 0)
                             cur.PbRatio = Math.Round(cur.CurrentPrice.Value / cur.BookValue.Value, 2);
+
+                        var prevDb = dbFinancials.Count > 1 ? dbFinancials[1] : null;
+                        var epsGrowth = CalculatePercentageGrowth(cur.Eps, prevDb?.Eps) ?? CalculatePercentageGrowth(cur.NetProfit, prevDb?.NetProfit);
+                        if (cur.PeRatio.HasValue && epsGrowth.HasValue && epsGrowth.Value > 0)
+                            cur.PegRatio = Math.Round(cur.PeRatio.Value / epsGrowth.Value, 2);
 
                         decimal? eqCapDb = latestBsDb?.EquityCapital ?? cur.EquityCapital;
                         var (refreshedMc, refreshedShares, refreshedEqCap, refreshedMcSrc) = CalculateMarketCap(eqCapDb, cur.FaceValue, cur.CurrentPrice, cur.MarketCap);
@@ -220,6 +231,14 @@ namespace StockLens_BusinessLayer.Services
                         cur.PbRatio = Math.Round(cur.CurrentPrice.Value / cur.BookValue.Value, 2);
                     }
 
+                    if (cur.PeRatio.HasValue && (!cur.PegRatio.HasValue || cur.PegRatio == 0))
+                    {
+                        var prevDb = dbFinancials.Count > 1 ? dbFinancials[1] : null;
+                        var epsGrowth = CalculatePercentageGrowth(cur.Eps, prevDb?.Eps) ?? CalculatePercentageGrowth(cur.NetProfit, prevDb?.NetProfit);
+                        if (epsGrowth.HasValue && epsGrowth.Value > 0)
+                            cur.PegRatio = Math.Round(cur.PeRatio.Value / epsGrowth.Value, 2);
+                    }
+
                     try
                     {
                         await _financialRepository.UpdateAsync(cur);
@@ -255,7 +274,8 @@ namespace StockLens_BusinessLayer.Services
                         MarketCapSource = mSource,
                         SectorPe = cur.SectorPe,
                         SectorPeSector = cur.SectorPeSector,
-                        SectorPeAsOfDate = cur.RatiosAsOfDate
+                        SectorPeAsOfDate = cur.RatiosAsOfDate,
+                        PegRatio = cur.PegRatio
                     };
                 }
             }
@@ -503,7 +523,7 @@ namespace StockLens_BusinessLayer.Services
             bool forceRefresh,
             CancellationToken cancellationToken)
         {
-            var existingEntities = await _financialRepository.GetFinancialsByStockIdAsync(stock.Id, "annual", 3);
+            var existingEntities = await _financialRepository.GetFinancialsByStockIdAsync(stock.Id, "annual", 5);
 
             bool isFresh = false;
             if (existingEntities.Count > 0)
@@ -521,13 +541,19 @@ namespace StockLens_BusinessLayer.Services
                 var dbBs = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 1);
                 var latestBsDb = dbBs.FirstOrDefault();
 
-                // 1. If cached entity doesn't have complete ratios/metrics yet, sync fundamentals from IndianAPI
+                if (!cur.Interest.HasValue || !cur.Depreciation.HasValue)
+                {
+                    await EnsureInterestAndDepreciationPopulatedAsync(stock, cur, cancellationToken);
+                }
+
+                // 1. If cached entity doesn't have basic balance sheet metrics yet, sync fundamentals from IndianAPI
                 if (cur.Roe == null ||
                     cur.FaceValue == null ||
                     cur.MarketCap == null ||
                     cur.BookValue == null ||
                     cur.Roce == null ||
-                    cur.SectorPe == null)
+                    cur.SectorPe == null ||
+                    existingEntities.Count < 2)
                 {
                     try
                     {
@@ -536,7 +562,12 @@ namespace StockLens_BusinessLayer.Services
                             var overview = await _indianApiClient.GetStockFinancialsAndOverviewAsync(stock.Symbol, stock.Exchange, cancellationToken);
                             if (overview != null)
                             {
-                                ApplyIndianApiRatiosToEntity(cur, overview, latestBsDb);
+                                var annualPeriods = overview.Financials
+                                    .Where(p => string.Equals(p.PeriodType, "annual", StringComparison.OrdinalIgnoreCase))
+                                    .OrderByDescending(p => p.PeriodEndDate ?? DateTime.MinValue)
+                                    .ToList();
+                                var prevAnn = annualPeriods.Count > 1 ? annualPeriods[1] : null;
+                                ApplyIndianApiRatiosToEntity(cur, overview, latestBsDb, prevAnn);
                             }
                         }
                     }
@@ -562,6 +593,11 @@ namespace StockLens_BusinessLayer.Services
                             cur.PeRatio = Math.Round(cur.CurrentPrice.Value / cur.TtmEps.Value, 2);
                         if (cur.BookValue.HasValue && cur.BookValue.Value > 0)
                             cur.PbRatio = Math.Round(cur.CurrentPrice.Value / cur.BookValue.Value, 2);
+
+                        var prevEntity = existingEntities.Count > 1 ? existingEntities[1] : null;
+                        var epsGrowth = CalculatePercentageGrowth(cur.Eps, prevEntity?.Eps) ?? CalculatePercentageGrowth(cur.NetProfit, prevEntity?.NetProfit);
+                        if (cur.PeRatio.HasValue && epsGrowth.HasValue && epsGrowth.Value > 0)
+                            cur.PegRatio = Math.Round(cur.PeRatio.Value / epsGrowth.Value, 2);
 
                         decimal? eqCapDb = latestBsDb?.EquityCapital ?? cur.EquityCapital;
                         var (refreshedMc, refreshedShares, refreshedEqCap, refreshedMcSrc) = CalculateMarketCap(eqCapDb, cur.FaceValue, cur.CurrentPrice, cur.MarketCap);
@@ -638,6 +674,14 @@ namespace StockLens_BusinessLayer.Services
                     cur.PbRatio = Math.Round(cur.CurrentPrice.Value / cur.BookValue.Value, 2);
                 }
 
+                if (cur.PeRatio.HasValue && (!cur.PegRatio.HasValue || cur.PegRatio == 0))
+                {
+                    var prevEntity = existingEntities.Count > 1 ? existingEntities[1] : null;
+                    var epsGrowth = CalculatePercentageGrowth(cur.Eps, prevEntity?.Eps) ?? CalculatePercentageGrowth(cur.NetProfit, prevEntity?.NetProfit);
+                    if (epsGrowth.HasValue && epsGrowth.Value > 0)
+                        cur.PegRatio = Math.Round(cur.PeRatio.Value / epsGrowth.Value, 2);
+                }
+
                 try
                 {
                     await _financialRepository.UpdateAsync(cur);
@@ -659,7 +703,7 @@ namespace StockLens_BusinessLayer.Services
             {
                 if (!forceRefresh)
                 {
-                    existingEntities = await _financialRepository.GetFinancialsByStockIdAsync(stock.Id, "annual", 3);
+                    existingEntities = await _financialRepository.GetFinancialsByStockIdAsync(stock.Id, "annual", 5);
                     if (existingEntities.Count > 0)
                     {
                         var lastSync = existingEntities.Max(e => e.LastSyncedAt);
@@ -675,7 +719,7 @@ namespace StockLens_BusinessLayer.Services
 
                 await SyncFinancialsFromProviderAsync(stock, cancellationToken);
 
-                existingEntities = await _financialRepository.GetFinancialsByStockIdAsync(stock.Id, "annual", 3);
+                existingEntities = await _financialRepository.GetFinancialsByStockIdAsync(stock.Id, "annual", 5);
                 if (existingEntities.Count == 0)
                 {
                     throw new ProviderNotFoundException(stock.Symbol, $"Annual financial and cashflow data is not available for {stock.Symbol}.");
@@ -768,9 +812,24 @@ namespace StockLens_BusinessLayer.Services
                 if (liveQuote.YearLow.HasValue) data.YearLow = liveQuote.YearLow;
             }
 
-            var periodsToSave = data.Financials.Take(5).ToList();
+            var annualPeriods = data.Financials
+                .Where(p => string.Equals(p.PeriodType, "annual", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(p => p.PeriodEndDate ?? DateTime.MinValue)
+                .ToList();
 
-            var latestAnnual = periodsToSave.FirstOrDefault(p => string.Equals(p.PeriodType, "annual", StringComparison.OrdinalIgnoreCase)) ?? periodsToSave.FirstOrDefault();
+            var quarterlyPeriods = data.Financials
+                .Where(p => string.Equals(p.PeriodType, "quarterly", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(p => p.PeriodEndDate ?? DateTime.MinValue)
+                .ToList();
+
+            var periodsToSave = annualPeriods.Take(5).Concat(quarterlyPeriods.Take(12)).ToList();
+            if (periodsToSave.Count == 0)
+            {
+                periodsToSave = data.Financials.Take(10).ToList();
+            }
+
+            var latestAnnual = annualPeriods.FirstOrDefault() ?? periodsToSave.FirstOrDefault(p => string.Equals(p.PeriodType, "annual", StringComparison.OrdinalIgnoreCase)) ?? periodsToSave.FirstOrDefault();
+            var prevAnnual = annualPeriods.Count > 1 ? annualPeriods[1] : null;
 
             for (int i = 0; i < periodsToSave.Count; i++)
             {
@@ -799,6 +858,12 @@ namespace StockLens_BusinessLayer.Services
 
                     if (period.Revenue.HasValue) existing.Revenue = period.Revenue;
                     if (period.OperatingProfit.HasValue) existing.OperatingProfit = period.OperatingProfit;
+                    if (period.OperatingProfitMargin.HasValue) existing.OperatingProfitMargin = period.OperatingProfitMargin;
+                    if (period.Interest.HasValue) existing.Interest = period.Interest;
+                    if (period.Depreciation.HasValue) existing.Depreciation = period.Depreciation;
+                    if (period.ProfitBeforeTax.HasValue) existing.ProfitBeforeTax = period.ProfitBeforeTax;
+                    if (period.Tax.HasValue) existing.Tax = period.Tax;
+                    if (period.OtherIncome.HasValue) existing.OtherIncome = period.OtherIncome;
                     if (period.NetProfit.HasValue) existing.NetProfit = period.NetProfit;
                     if (period.Eps.HasValue) existing.Eps = period.Eps;
                     if (period.NetProfitAttributableToMinorityInterest.HasValue)
@@ -816,7 +881,7 @@ namespace StockLens_BusinessLayer.Services
 
                     if (period == latestAnnual)
                     {
-                        ApplyIndianApiRatiosToEntity(existing, data, matchingBs);
+                        ApplyIndianApiRatiosToEntity(existing, data, matchingBs, prevAnnual);
                     }
 
                     existing.Source = "IndianAPI";
@@ -836,6 +901,12 @@ namespace StockLens_BusinessLayer.Services
                         PeriodEndDate = period.PeriodEndDate,
                         Revenue = period.Revenue,
                         OperatingProfit = period.OperatingProfit,
+                        OperatingProfitMargin = period.OperatingProfitMargin,
+                        Interest = period.Interest,
+                        Depreciation = period.Depreciation,
+                        ProfitBeforeTax = period.ProfitBeforeTax,
+                        Tax = period.Tax,
+                        OtherIncome = period.OtherIncome,
                         NetProfit = period.NetProfit,
                         Eps = period.Eps,
                         NetProfitAttributableToMinorityInterest = period.NetProfitAttributableToMinorityInterest,
@@ -857,7 +928,7 @@ namespace StockLens_BusinessLayer.Services
 
                     if (period == latestAnnual)
                     {
-                        ApplyIndianApiRatiosToEntity(newEntity, data, matchingBs);
+                        ApplyIndianApiRatiosToEntity(newEntity, data, matchingBs, prevAnnual);
                     }
 
                     await _financialRepository.AddAsync(newEntity);
@@ -871,7 +942,8 @@ namespace StockLens_BusinessLayer.Services
         private static void ApplyIndianApiRatiosToEntity(
             StockFinancial entity,
             IndianApiStockOverviewDto data,
-            StockBalanceSheet? matchingBalanceSheet)
+            StockBalanceSheet? matchingBalanceSheet,
+            IndianApiFinancialPeriodDto? prevAnnualPeriod = null)
         {
             if (!entity.CurrentPrice.HasValue && data.CurrentPrice.HasValue) entity.CurrentPrice = data.CurrentPrice;
             if (data.TtmEps.HasValue) entity.TtmEps = data.TtmEps;
@@ -890,6 +962,13 @@ namespace StockLens_BusinessLayer.Services
             }
 
             var latestFin = data.Financials.FirstOrDefault(f => f.PeriodType == "annual") ?? data.Financials.FirstOrDefault();
+
+            if (!entity.Interest.HasValue && latestFin?.Interest.HasValue == true) entity.Interest = latestFin.Interest;
+            if (!entity.Depreciation.HasValue && latestFin?.Depreciation.HasValue == true) entity.Depreciation = latestFin.Depreciation;
+            if (!entity.ProfitBeforeTax.HasValue && latestFin?.ProfitBeforeTax.HasValue == true) entity.ProfitBeforeTax = latestFin.ProfitBeforeTax;
+            if (!entity.Tax.HasValue && latestFin?.Tax.HasValue == true) entity.Tax = latestFin.Tax;
+            if (!entity.OtherIncome.HasValue && latestFin?.OtherIncome.HasValue == true) entity.OtherIncome = latestFin.OtherIncome;
+            if (!entity.OperatingProfitMargin.HasValue && latestFin?.OperatingProfitMargin.HasValue == true) entity.OperatingProfitMargin = latestFin.OperatingProfitMargin;
 
             decimal? equityCapital = matchingBalanceSheet?.EquityCapital ?? entity.EquityCapital ?? latestFin?.EquityCapital;
             if (equityCapital.HasValue) entity.EquityCapital = equityCapital;
@@ -992,6 +1071,16 @@ namespace StockLens_BusinessLayer.Services
             else if (data.PbRatio.HasValue)
             {
                 entity.PbRatio = data.PbRatio;
+            }
+
+            // Dynamic PEG Calculation
+            if (entity.PeRatio.HasValue && (!entity.PegRatio.HasValue || entity.PegRatio == 0))
+            {
+                var epsGrowth = CalculatePercentageGrowth(entity.Eps, prevAnnualPeriod?.Eps) ?? CalculatePercentageGrowth(entity.NetProfit, prevAnnualPeriod?.NetProfit);
+                if (epsGrowth.HasValue && epsGrowth.Value > 0)
+                {
+                    entity.PegRatio = Math.Round(entity.PeRatio.Value / epsGrowth.Value, 2);
+                }
             }
         }
 
@@ -1104,7 +1193,8 @@ namespace StockLens_BusinessLayer.Services
 
                     if (i == 0)
                     {
-                        ApplyRatiosToEntity(existing, ratios, details, screener, sectorValuation, totalEquityInfo, matchingBs, livePrice);
+                        var prevRecord = records.Count > 1 ? records[1] : null;
+                        ApplyRatiosToEntity(existing, ratios, details, screener, sectorValuation, totalEquityInfo, matchingBs, livePrice, prevRecord);
                     }
 
                     existing.Source = !string.IsNullOrWhiteSpace(record.Source) ? record.Source : existing.Source;
@@ -1143,7 +1233,8 @@ namespace StockLens_BusinessLayer.Services
 
                     if (i == 0)
                     {
-                        ApplyRatiosToEntity(newEntity, ratios, details, screener, sectorValuation, totalEquityInfo, matchingBs, livePrice);
+                        var prevRecord = records.Count > 1 ? records[1] : null;
+                        ApplyRatiosToEntity(newEntity, ratios, details, screener, sectorValuation, totalEquityInfo, matchingBs, livePrice, prevRecord);
                     }
 
                     await _financialRepository.AddAsync(newEntity);
@@ -1161,7 +1252,8 @@ namespace StockLens_BusinessLayer.Services
             SectorValuationResultDto? sectorValuation = null,
             (decimal? TotalEquity, string? Source, string? Period)? totalEquityInfo = null,
             StockBalanceSheet? matchingBalanceSheet = null,
-            decimal? livePrice = null)
+            decimal? livePrice = null,
+            BharatStockFinancialRecord? prevRecord = null)
         {
             if (ratios != null)
             {
@@ -1227,6 +1319,16 @@ namespace StockLens_BusinessLayer.Services
                 entity.MarketCapSource = mcSource;
                 entity.TotalShares = totalShares;
                 entity.EquityCapital = eqCap;
+            }
+
+            // Dynamic PEG Calculation
+            if (entity.PeRatio.HasValue && (!entity.PegRatio.HasValue || entity.PegRatio == 0))
+            {
+                var epsGrowth = CalculatePercentageGrowth(entity.Eps, prevRecord?.Eps) ?? CalculatePercentageGrowth(entity.NetProfit, prevRecord?.NetProfit);
+                if (epsGrowth.HasValue && epsGrowth.Value > 0)
+                {
+                    entity.PegRatio = Math.Round(entity.PeRatio.Value / epsGrowth.Value, 2);
+                }
             }
         }
 
@@ -1298,19 +1400,7 @@ namespace StockLens_BusinessLayer.Services
             BharatStockFinancialRecord? record,
             StockBalanceSheet? matchingBalanceSheet = null)
         {
-            // Priority 1: IndianAPI Balance Sheet formula: Total Equity = Total Assets - (Borrowings + Other Liabilities)
-            if (matchingBalanceSheet?.CalculatedTotalEquity.HasValue == true)
-            {
-                return (matchingBalanceSheet.CalculatedTotalEquity.Value, "Calculated (Total Assets - (Borrowings + Other Liabilities))", matchingBalanceSheet.FiscalYear);
-            }
-
-            if (matchingBalanceSheet?.TotalAssets.HasValue == true && matchingBalanceSheet?.TotalLiabilities.HasValue == true)
-            {
-                var calcEquity = matchingBalanceSheet.TotalAssets.Value - matchingBalanceSheet.TotalLiabilities.Value;
-                return (calcEquity, "Calculated (Total Assets - Total Liabilities)", matchingBalanceSheet.FiscalYear);
-            }
-
-            // Priority 2: Direct reported shareholders' equity / total equity field
+            // Direct reported shareholders' equity / total equity field only (No calculated formulas)
             if (record?.TotalEquity.HasValue == true)
             {
                 return (record.TotalEquity.Value, "Reported", record.ResolvedFiscalYear);
@@ -1319,13 +1409,6 @@ namespace StockLens_BusinessLayer.Services
             if (record?.ShareholdersEquity.HasValue == true)
             {
                 return (record.ShareholdersEquity.Value, "Reported", record.ResolvedFiscalYear);
-            }
-
-            // Priority 3: Fallback from record Total Assets - Total Liabilities
-            if (record?.TotalAssets.HasValue == true && record?.TotalLiabilities.HasValue == true)
-            {
-                var calcEquity = record.TotalAssets.Value - record.TotalLiabilities.Value;
-                return (calcEquity, "Calculated (Total Assets - Total Liabilities)", record.ResolvedFiscalYear);
             }
 
             return (null, null, null);
@@ -1369,29 +1452,6 @@ namespace StockLens_BusinessLayer.Services
                 capexToCfoPct = Math.Round((current.Capex.Value / current.OperatingCashFlow.Value) * 100, 2);
             }
 
-            var yoy = new CashflowYoYChangeDto();
-
-            if (previous != null)
-            {
-                yoy.FreeCashFlowChange = CalculateAbsoluteChange(current.FreeCashFlow, previous.FreeCashFlow);
-                yoy.FreeCashFlowGrowth = CalculatePercentageGrowth(current.FreeCashFlow, previous.FreeCashFlow);
-
-                yoy.OperatingCashFlowChange = CalculateAbsoluteChange(current.OperatingCashFlow, previous.OperatingCashFlow);
-                yoy.OperatingCashFlowGrowth = CalculatePercentageGrowth(current.OperatingCashFlow, previous.OperatingCashFlow);
-
-                yoy.CapexChange = CalculateAbsoluteChange(current.Capex, previous.Capex);
-                yoy.CapexGrowth = CalculatePercentageGrowth(current.Capex, previous.Capex);
-
-                yoy.NetProfitChange = CalculateAbsoluteChange(current.NetProfit, previous.NetProfit);
-                yoy.NetProfitGrowth = CalculatePercentageGrowth(current.NetProfit, previous.NetProfit);
-
-                yoy.RevenueChange = CalculateAbsoluteChange(current.Revenue, previous.Revenue);
-                yoy.RevenueGrowth = CalculatePercentageGrowth(current.Revenue, previous.Revenue);
-
-                yoy.NetCashFlowChange = CalculateAbsoluteChange(current.NetCashFlow, previous.NetCashFlow);
-                yoy.NetCashFlowGrowth = CalculatePercentageGrowth(current.NetCashFlow, previous.NetCashFlow);
-            }
-
             // Total equity metadata
             string? equitySource = current.TotalEquitySource;
             if (string.IsNullOrWhiteSpace(equitySource) && current.TotalEquity.HasValue)
@@ -1399,25 +1459,9 @@ namespace StockLens_BusinessLayer.Services
                 equitySource = "Reported";
             }
             string? equityPeriod = current.FiscalYear;
-
-            // Prioritize BalanceSheet-based Total Equity if available, otherwise use entity TotalEquity
             decimal? totalEquity = current.TotalEquity;
             var dbBs = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 1);
             var latestBs = dbBs.FirstOrDefault();
-            if (latestBs?.CalculatedTotalEquity.HasValue == true)
-            {
-                var bsEquityInfo = DetermineTotalEquity(null, latestBs);
-                totalEquity = bsEquityInfo.TotalEquity;
-                equitySource = bsEquityInfo.Source;
-                equityPeriod = bsEquityInfo.Period;
-            }
-            else if (!totalEquity.HasValue)
-            {
-                var bsEquityInfo = DetermineTotalEquity(null, latestBs);
-                totalEquity = bsEquityInfo.TotalEquity;
-                equitySource = bsEquityInfo.Source;
-                equityPeriod = bsEquityInfo.Period;
-            }
 
             // Sector P/E metadata
             string? sectorName = current.SectorPeSector ?? stock.Company?.Industry ?? stock.Company?.CompanyName;
@@ -1498,6 +1542,63 @@ namespace StockLens_BusinessLayer.Services
                 if (ebit.HasValue && capEmp.HasValue && capEmp.Value > 0) roce = Math.Round((ebit.Value / capEmp.Value) * 100m, 2);
             }
 
+            // Derive EPS fallback from TtmEps or NetProfit / TotalShares if EPS is missing
+            if (!current.Eps.HasValue && current.TtmEps.HasValue) current.Eps = current.TtmEps;
+            if (!current.Eps.HasValue && current.NetProfit.HasValue && totalShares.HasValue && totalShares.Value > 0)
+                current.Eps = Math.Round((current.NetProfit.Value * 10000000m) / totalShares.Value, 2);
+
+            if (previous != null)
+            {
+                if (!previous.Eps.HasValue && previous.NetProfit.HasValue && totalShares.HasValue && totalShares.Value > 0)
+                    previous.Eps = Math.Round((previous.NetProfit.Value * 10000000m) / totalShares.Value, 2);
+            }
+
+            var yoy = new CashflowYoYChangeDto();
+
+            if (previous != null)
+            {
+                yoy.FreeCashFlowChange = CalculateAbsoluteChange(current.FreeCashFlow, previous.FreeCashFlow);
+                yoy.FreeCashFlowGrowth = CalculatePercentageGrowth(current.FreeCashFlow, previous.FreeCashFlow);
+
+                yoy.OperatingCashFlowChange = CalculateAbsoluteChange(current.OperatingCashFlow, previous.OperatingCashFlow);
+                yoy.OperatingCashFlowGrowth = CalculatePercentageGrowth(current.OperatingCashFlow, previous.OperatingCashFlow);
+
+                yoy.CapexChange = CalculateAbsoluteChange(current.Capex, previous.Capex);
+                yoy.CapexGrowth = CalculatePercentageGrowth(current.Capex, previous.Capex);
+
+                yoy.NetProfitChange = CalculateAbsoluteChange(current.NetProfit, previous.NetProfit);
+                yoy.NetProfitGrowth = CalculatePercentageGrowth(current.NetProfit, previous.NetProfit);
+
+                yoy.EpsChange = CalculateAbsoluteChange(current.Eps, previous.Eps) ?? yoy.NetProfitChange;
+                yoy.EpsGrowth = CalculatePercentageGrowth(current.Eps, previous.Eps) ?? yoy.NetProfitGrowth;
+
+                yoy.RevenueChange = CalculateAbsoluteChange(current.Revenue, previous.Revenue);
+                yoy.RevenueGrowth = CalculatePercentageGrowth(current.Revenue, previous.Revenue);
+
+                yoy.NetCashFlowChange = CalculateAbsoluteChange(current.NetCashFlow, previous.NetCashFlow);
+                yoy.NetCashFlowGrowth = CalculatePercentageGrowth(current.NetCashFlow, previous.NetCashFlow);
+            }
+            else
+            {
+                // Fallback from quarterly records if annual history is single-year
+                try
+                {
+                    var quarterlyEntities = await _financialRepository.GetFinancialsByStockIdAsync(stock.Id, "quarterly", 8);
+                    if (quarterlyEntities != null && quarterlyEntities.Count >= 2)
+                    {
+                        var qCur = quarterlyEntities[0];
+                        var qPrev = quarterlyEntities.Count >= 5 ? quarterlyEntities[4] : quarterlyEntities[1];
+                        yoy.NetProfitGrowth = CalculatePercentageGrowth(qCur.NetProfit, qPrev.NetProfit);
+                        yoy.EpsGrowth = CalculatePercentageGrowth(qCur.Eps, qPrev.Eps) ?? yoy.NetProfitGrowth;
+                        yoy.RevenueGrowth = CalculatePercentageGrowth(qCur.Revenue, qPrev.Revenue);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Could not fetch quarterly fallback for EPS growth for {Symbol}", stock.Symbol);
+                }
+            }
+
             // Dynamic P/E calculation based on current live price
             var eps = current.TtmEps ?? current.Eps;
             if (eps.HasValue && eps.Value > 0 && currentPrice.HasValue && currentPrice.Value > 0)
@@ -1510,7 +1611,7 @@ namespace StockLens_BusinessLayer.Services
             }
             else
             {
-                peRatio = current.PeRatio;
+                peRatio = peRatio ?? current.PeRatio;
             }
 
             // Dynamic P/B calculation based on current live price
@@ -1522,6 +1623,31 @@ namespace StockLens_BusinessLayer.Services
             else
             {
                 pbRatio = current.PbRatio;
+            }
+
+            // PEG Ratio Calculation: P/E / Trailing EPS Growth Rate
+            decimal? effectiveGrowth = yoy.EpsGrowth ?? yoy.NetProfitGrowth ?? yoy.RevenueGrowth;
+            decimal? pegRatio = null;
+            if (peRatio.HasValue && effectiveGrowth.HasValue && effectiveGrowth.Value > 0)
+            {
+                pegRatio = Math.Round(peRatio.Value / effectiveGrowth.Value, 2);
+            }
+            pegRatio = pegRatio ?? current.PegRatio;
+
+            if ((pegRatio.HasValue && current.PegRatio != pegRatio) || (peRatio.HasValue && current.PeRatio != peRatio) || (pbRatio.HasValue && current.PbRatio != pbRatio))
+            {
+                if (pegRatio.HasValue) current.PegRatio = pegRatio;
+                if (peRatio.HasValue) current.PeRatio = peRatio;
+                if (pbRatio.HasValue) current.PbRatio = pbRatio;
+                try
+                {
+                    await _financialRepository.UpdateAsync(current);
+                    await _financialRepository.SaveChangesAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to persist updated ratios to DB in BuildResponseDtoAsync for {Symbol}", stock.Symbol);
+                }
             }
 
             var ratiosDto = new StockRatiosDto
@@ -1549,8 +1675,14 @@ namespace StockLens_BusinessLayer.Services
                 MarketCapSource = mcSource,
                 SectorPe = sectorPe,
                 SectorPeSector = sectorName,
-                SectorPeAsOfDate = sectorAsOfDate
+                SectorPeAsOfDate = sectorAsOfDate,
+                PegRatio = pegRatio
             };
+
+            if (!current.Interest.HasValue || !current.Depreciation.HasValue)
+            {
+                await EnsureInterestAndDepreciationPopulatedAsync(stock, current, cancellationToken);
+            }
 
             var summary = new CashflowSummaryDto
             {
@@ -1564,6 +1696,8 @@ namespace StockLens_BusinessLayer.Services
                 OperatingProfit = current.OperatingProfit,
                 NetProfit = current.NetProfit,
                 Eps = current.Eps,
+                Interest = current.Interest,
+                Depreciation = current.Depreciation,
                 OtherEquity = current.OtherEquity,
                 TotalEquity = totalEquity,
                 CfoToOperatingProfitRatio = cfoToOpRatio,
@@ -1607,6 +1741,79 @@ namespace StockLens_BusinessLayer.Services
                 return Math.Round(growth, 2);
             }
             return null;
+        }
+
+        private async Task EnsureInterestAndDepreciationPopulatedAsync(Stock stock, StockFinancial cur, CancellationToken cancellationToken)
+        {
+            if (!cur.Interest.HasValue || cur.Interest.Value == 0)
+            {
+                // 1. Try summing 4 quarterly records from DB
+                var dbQuarters = await _financialRepository.GetFinancialsByStockIdAsync(stock.Id, "quarterly", 4);
+                if (dbQuarters.Count > 0 && dbQuarters.Any(q => q.Interest.HasValue && q.Interest.Value > 0))
+                {
+                    cur.Interest = dbQuarters.Sum(q => q.Interest ?? 0);
+                }
+                else if (_yahooFinanceClient != null)
+                {
+                    try
+                    {
+                        var yfQuarters = await _yahooFinanceClient.GetQuarterlyIncomeStatementsAsync(stock.Symbol, stock.Exchange, cancellationToken);
+                        if (yfQuarters != null && yfQuarters.Count > 0)
+                        {
+                            var sumInt = yfQuarters.Take(4).Sum(q => q.Interest ?? 0);
+                            if (sumInt > 0)
+                            {
+                                cur.Interest = sumInt;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to fallback interest from Yahoo Finance for {Symbol}", stock.Symbol);
+                    }
+                }
+            }
+
+            if (!cur.Depreciation.HasValue || cur.Depreciation.Value == 0)
+            {
+                var dbQuarters = await _financialRepository.GetFinancialsByStockIdAsync(stock.Id, "quarterly", 4);
+                if (dbQuarters.Count > 0 && dbQuarters.Any(q => q.Depreciation.HasValue && q.Depreciation.Value > 0))
+                {
+                    cur.Depreciation = dbQuarters.Sum(q => q.Depreciation ?? 0);
+                }
+                else if (_yahooFinanceClient != null)
+                {
+                    try
+                    {
+                        var yfQuarters = await _yahooFinanceClient.GetQuarterlyIncomeStatementsAsync(stock.Symbol, stock.Exchange, cancellationToken);
+                        if (yfQuarters != null && yfQuarters.Count > 0)
+                        {
+                            var sumDep = yfQuarters.Take(4).Sum(q => q.Depreciation ?? 0);
+                            if (sumDep > 0)
+                            {
+                                cur.Depreciation = sumDep;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to fallback depreciation from Yahoo Finance for {Symbol}", stock.Symbol);
+                    }
+                }
+            }
+
+            if (cur.Interest.HasValue || cur.Depreciation.HasValue)
+            {
+                try
+                {
+                    await _financialRepository.UpdateAsync(cur);
+                    await _financialRepository.SaveChangesAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to persist fallback interest/depreciation to DB for {Symbol}", stock.Symbol);
+                }
+            }
         }
     }
 }

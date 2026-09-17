@@ -145,6 +145,11 @@ namespace StockLens_DataLayer.Entities
         public decimal? PeRatio { get; set; }
 
         /// <summary>
+        /// Price/Earnings to Growth (PEG) ratio.
+        /// </summary>
+        public decimal? PegRatio { get; set; }
+
+        /// <summary>
         /// Price-to-Book (P/B) ratio.
         /// </summary>
         public decimal? PbRatio { get; set; }

@@ -113,6 +113,7 @@ namespace StockLens_BusinessLayer.DTOs
         public decimal? NetProfitGrowthPercent { get; set; }
         public decimal? EpsGrowthPercent { get; set; }
         public decimal? DepreciationGrowthPercent { get; set; }
+        public decimal? InterestGrowthPercent { get; set; }
         public decimal? TaxGrowthPercent { get; set; }
     }
 }

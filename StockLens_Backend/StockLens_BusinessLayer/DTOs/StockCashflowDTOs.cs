@@ -44,6 +44,7 @@ namespace StockLens_BusinessLayer.DTOs
         public decimal? SectorPe { get; set; }
         public string? SectorPeSector { get; set; }
         public string? SectorPeAsOfDate { get; set; }
+        public decimal? PegRatio { get; set; }
     }
 
 
@@ -59,6 +60,8 @@ namespace StockLens_BusinessLayer.DTOs
         public decimal? OperatingProfit { get; set; } // OP
         public decimal? NetProfit { get; set; }
         public decimal? Eps { get; set; }
+        public decimal? Interest { get; set; } // Current / Annual Interest expense in ₹ Crores
+        public decimal? Depreciation { get; set; } // Current / Annual Depreciation in ₹ Crores
         public decimal? OtherEquity { get; set; }
         public decimal? TotalEquity { get; set; }
         public decimal? CfoToOperatingProfitRatio { get; set; } // CFO / OP ratio
@@ -85,6 +88,9 @@ namespace StockLens_BusinessLayer.DTOs
 
         public decimal? NetProfitChange { get; set; }
         public decimal? NetProfitGrowth { get; set; } // YoY %
+
+        public decimal? EpsChange { get; set; }
+        public decimal? EpsGrowth { get; set; } // YoY %
 
         public decimal? RevenueChange { get; set; }
         public decimal? RevenueGrowth { get; set; } // YoY %

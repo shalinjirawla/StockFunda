@@ -57,6 +57,7 @@ namespace StockLens_UnitTests
                     ProfitBeforeTax = 16200m,
                     Tax = 4100m,
                     NetProfit = 12050m,
+                    Interest = 200m,
                     Eps = 33.2m,
                     Source = "IndianAPI",
                     LastSyncedAt = DateTime.UtcNow

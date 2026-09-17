@@ -457,6 +457,8 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
                                             period.NetCashFlow = netCash;
                                         else if ((key == "Depreciation/Depletion" || key == "Depreciation/Amortization" || key == "Depreciation" || key == "DepreciationAndAmortization" || key == "DepreciationAmortizationTotal" || key == "DepreciationExpense" || (key != null && key.StartsWith("Depreciation", StringComparison.OrdinalIgnoreCase))) && TryExtractDecimal(v, out var depCas))
                                             period.Depreciation ??= Math.Abs(depCas);
+                                        else if ((key == "InterestPaid" || key == "Interest Paid" || key == "FinanceCostsPaid" || key == "Finance Costs Paid" || (key != null && (key.StartsWith("Interest", StringComparison.OrdinalIgnoreCase) || key.StartsWith("Finance Cost", StringComparison.OrdinalIgnoreCase)))) && TryExtractDecimal(v, out var intCas))
+                                            period.Interest ??= Math.Abs(intCas);
                                     }
                                 }
                             }
@@ -475,7 +477,7 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
                                             period.OperatingProfit = op;
                                         else if ((key == "Depreciation/Amortization" || key == "Depreciation" || key == "Depreciation/Depletion" || key == "DepreciationAndAmortization" || key == "DepreciationAmortizationTotal" || key == "DepreciationExpense" || key == "Depreciation & Amortization" || (key != null && key.StartsWith("Depreciation", StringComparison.OrdinalIgnoreCase))) && TryExtractDecimal(v, out var dep))
                                             period.Depreciation = Math.Abs(dep);
-                                        else if ((key == "TotalInterestExpense" || key == "InterestExpense" || key == "Interest" || key == "FinanceCosts") && TryExtractDecimal(v, out var interest))
+                                        else if ((key == "TotalInterestExpense" || key == "InterestExpense" || key == "Interest" || key == "FinanceCosts" || key == "Finance Costs" || key == "Finance Cost" || key == "Interest Expense" || key == "Interest & Finance Charges" || (key != null && (key.StartsWith("Interest", StringComparison.OrdinalIgnoreCase) || key.StartsWith("Finance Cost", StringComparison.OrdinalIgnoreCase)))) && TryExtractDecimal(v, out var interest))
                                             period.Interest = Math.Abs(interest);
                                         else if ((key == "NonOperatingIncome" || key == "OtherIncome" || key == "TotalOtherIncomeExpenseNet") && TryExtractDecimal(v, out var oi))
                                             period.OtherIncome = oi;
@@ -487,7 +489,7 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
                                             period.NetProfit = np;
                                         else if (key == "NetIncomeAfterTaxes" && TryExtractDecimal(v, out var npat) && !period.NetProfit.HasValue)
                                             period.NetProfit = npat;
-                                        else if ((key == "DilutedEPSExcludingExtraOrdItems" || key == "DilutedNormalizedEPS" || key == "DilutedEPS" || key == "BasicEPS" || key == "EPS" || key == "Eps") && TryExtractDecimal(v, out var eps))
+                                        else if ((key == "DilutedEPSExcludingExtraOrdItems" || key == "DilutedNormalizedEPS" || key == "DilutedEPS" || key == "BasicEPS" || key == "EPS" || key == "Eps" || (key != null && (key.Contains("EPS", StringComparison.OrdinalIgnoreCase) || key.Contains("EarningsPerShare", StringComparison.OrdinalIgnoreCase)))) && TryExtractDecimal(v, out var eps) && eps > 0)
                                             period.Eps = eps;
                                         else if (key == "MinorityInterest" && TryExtractDecimal(v, out var mi))
                                             period.NetProfitAttributableToMinorityInterest = Math.Abs(mi);

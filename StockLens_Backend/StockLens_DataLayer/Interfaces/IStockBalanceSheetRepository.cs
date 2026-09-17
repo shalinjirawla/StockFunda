@@ -6,7 +6,7 @@ namespace StockLens_DataLayer.Interfaces
 {
     public interface IStockBalanceSheetRepository
     {
-        Task<List<StockBalanceSheet>> GetRecentByStockIdAsync(int stockId, int limit = 3);
+        Task<List<StockBalanceSheet>> GetRecentByStockIdAsync(int stockId, int limit = 5);
         Task RemoveRangeAsync(IEnumerable<StockBalanceSheet> balanceSheets);
         Task AddRangeAsync(IEnumerable<StockBalanceSheet> balanceSheets);
         Task<int> SaveChangesAsync();

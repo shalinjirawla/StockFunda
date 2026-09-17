@@ -53,14 +53,5 @@ namespace StockLens_DataLayer.Entities
         public DateTime LastSyncedAt { get; set; } = DateTime.UtcNow;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
-
-        /// <summary>
-        /// Total Equity (Shareholders' Funds) = Total Assets - (Borrowings + Other Liabilities)
-        /// </summary>
-        [System.ComponentModel.DataAnnotations.Schema.NotMapped]
-        public decimal? CalculatedTotalEquity =>
-            TotalAssets.HasValue
-                ? TotalAssets.Value - ((Borrowings ?? 0m) + (OtherLiabilities ?? 0m))
-                : (EquityCapital.HasValue || Reserves.HasValue ? (EquityCapital ?? 0m) + (Reserves ?? 0m) : (decimal?)null);
     }
 }
