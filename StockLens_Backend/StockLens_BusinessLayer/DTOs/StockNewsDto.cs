@@ -26,7 +26,7 @@ namespace StockLens_BusinessLayer.DTOs
         public string CompanyName { get; set; } = string.Empty;
         public List<StockNewsItemDto> News { get; set; } = new();
         public int Page { get; set; } = 1;
-        public int Limit { get; set; } = 20;
+        public int Limit { get; set; } = 5;
         public DateTime? LastFetchedAt { get; set; }
     }
 }

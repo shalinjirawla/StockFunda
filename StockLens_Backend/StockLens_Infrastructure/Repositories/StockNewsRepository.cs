@@ -18,10 +18,10 @@ namespace StockLens_Infrastructure.Repositories
             _context = context;
         }
 
-        public async Task<IEnumerable<StockNews>> GetNewsByStockIdAsync(int stockId, int limit = 20, int page = 1)
+        public async Task<IEnumerable<StockNews>> GetNewsByStockIdAsync(int stockId, int limit = 5, int page = 1)
         {
             if (page < 1) page = 1;
-            if (limit < 1) limit = 20;
+            if (limit < 1) limit = 5;
             if (limit > 100) limit = 100;
 
             return await _context.StockNews

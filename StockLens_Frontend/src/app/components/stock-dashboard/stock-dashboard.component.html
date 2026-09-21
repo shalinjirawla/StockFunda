@@ -460,7 +460,7 @@
           <!-- Institutional Summary Line -->
           <div class="inst-summary-row">
             <span class="inst-lbl">Total Institutional (FII + DII):</span>
-            <span class="inst-val text-cyan">{{ (((sh.fii || 0) + (sh.dii || 0))).toFixed(2) }}%</span>
+            <span class="inst-val text-cyan">{{ getTotalInstitutional() }}</span>
           </div>
 
           <!-- 4-Quarter Trend Table -->
@@ -691,44 +691,53 @@
           <!-- EFFICIENCY RATIOS -->
           <div class="sub-section">
             <span class="sub-section-heading">EFFICIENCY RATIOS</span>
-            <div class="shareholding-grid" style="margin-top: 12px;">
+            <div class="efficiency-trio-grid">
               <!-- Debtor Days -->
               <div class="quad-box">
                 <div class="quad-label-row">
                   <span class="quad-label"><span class="dot dot-amber"></span>Debtor Days</span>
+                </div>
+                <div class="quad-bottom-row">
+                  <span class="quad-value">{{ cashflowResponse()?.ratios?.debtorDays != null ?
+                    cashflowResponse()?.ratios?.debtorDays + ' Days' : '—' }}</span>
                   @if (cashflowResponse()?.ratios?.debtorDaysYoY; as g) {
-                  <span class="delta-tag" [ngClass]="getChangeClass(-g)">
+                  <span class="delta-tag" [ngClass]="getChangeClass(g)">
                     {{ getArrow(g) }} {{ formatPercent(g) }}
                   </span>
                   }
                 </div>
-                <div class="quad-value">{{ cashflowResponse()?.ratios?.debtorDays != null ? cashflowResponse()?.ratios?.debtorDays + ' Days' : '—' }}</div>
               </div>
 
               <!-- Inventory Days -->
               <div class="quad-box">
                 <div class="quad-label-row">
                   <span class="quad-label"><span class="dot dot-emerald"></span>Inventory Days</span>
+                </div>
+                <div class="quad-bottom-row">
+                  <span class="quad-value">{{ cashflowResponse()?.ratios?.inventoryDays != null ?
+                    cashflowResponse()?.ratios?.inventoryDays + ' Days' : '—' }}</span>
                   @if (cashflowResponse()?.ratios?.inventoryDaysYoY; as g) {
-                  <span class="delta-tag" [ngClass]="getChangeClass(-g)">
+                  <span class="delta-tag" [ngClass]="getChangeClass(g)">
                     {{ getArrow(g) }} {{ formatPercent(g) }}
                   </span>
                   }
                 </div>
-                <div class="quad-value">{{ cashflowResponse()?.ratios?.inventoryDays != null ? cashflowResponse()?.ratios?.inventoryDays + ' Days' : '—' }}</div>
               </div>
 
               <!-- Payable Days -->
               <div class="quad-box">
                 <div class="quad-label-row">
                   <span class="quad-label"><span class="dot dot-cyan"></span>Payable Days</span>
+                </div>
+                <div class="quad-bottom-row">
+                  <span class="quad-value">{{ cashflowResponse()?.ratios?.payableDays != null ?
+                    cashflowResponse()?.ratios?.payableDays + ' Days' : '—' }}</span>
                   @if (cashflowResponse()?.ratios?.payableDaysYoY; as g) {
                   <span class="delta-tag" [ngClass]="getChangeClass(g)">
                     {{ getArrow(g) }} {{ formatPercent(g) }}
                   </span>
                   }
                 </div>
-                <div class="quad-value">{{ cashflowResponse()?.ratios?.payableDays != null ? cashflowResponse()?.ratios?.payableDays + ' Days' : '—' }}</div>
               </div>
             </div>
           </div>

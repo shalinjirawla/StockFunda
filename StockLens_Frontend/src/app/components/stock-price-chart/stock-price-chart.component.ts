@@ -206,8 +206,8 @@ export class StockPriceChartComponent implements OnChanges, OnInit {
         marginRight: 55, // Space for right Y axis labels
         marginLeft: 45,  // Space for left Y axis labels
         marginTop: 10,
-        marginBottom: 28, // Clear space for bottom X axis years
-        spacing: [4, 4, 4, 4]
+        marginBottom: 44, // Generous clearance for bottom X-axis dates across all zoom levels
+        spacing: [4, 4, 12, 4]
       },
       title: {
         text: ''
@@ -224,7 +224,7 @@ export class StockPriceChartComponent implements OnChanges, OnInit {
         labels: {
           style: { color: 'rgba(255, 255, 255, 0.9)', fontSize: '11px', fontWeight: '600' },
           format: labelFormat,
-          y: 18
+          y: 20
         },
         tickInterval: tickInterval,
         lineColor: 'rgba(255, 255, 255, 0.15)',

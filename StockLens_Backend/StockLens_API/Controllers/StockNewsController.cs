@@ -36,7 +36,7 @@ namespace StockLens_API.Controllers
         /// Retrieves latest news for a specific stock by its Stock ID.
         /// </summary>
         /// <param name="stockId">The database ID of the stock.</param>
-        /// <param name="limit">Max number of news items to return (default: 20, max: 100).</param>
+        /// <param name="limit">Max number of news items to return (default: 5, max: 100).</param>
         /// <param name="page">Page index (default: 1).</param>
         /// <param name="refresh">Force cache refresh from IndianAPI.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
@@ -46,7 +46,7 @@ namespace StockLens_API.Controllers
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> GetNewsByStockId(
             int stockId,
-            [FromQuery] int limit = 20,
+            [FromQuery] int limit = 5,
             [FromQuery] int page = 1,
             [FromQuery] bool refresh = false,
             CancellationToken cancellationToken = default)
@@ -71,7 +71,7 @@ namespace StockLens_API.Controllers
         /// </summary>
         /// <param name="symbol">Stock ticker symbol (e.g., RELIANCE, TCS, INFY).</param>
         /// <param name="exchange">Stock exchange (NSE or BSE, default: NSE).</param>
-        /// <param name="limit">Max number of news items to return.</param>
+        /// <param name="limit">Max number of news items to return (default: 5, max: 100).</param>
         /// <param name="page">Page index.</param>
         /// <param name="refresh">Force cache refresh from IndianAPI.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
@@ -82,7 +82,7 @@ namespace StockLens_API.Controllers
         public async Task<IActionResult> GetNewsBySymbol(
             [FromQuery] string symbol,
             [FromQuery] string? exchange = "NSE",
-            [FromQuery] int limit = 20,
+            [FromQuery] int limit = 5,
             [FromQuery] int page = 1,
             [FromQuery] bool refresh = false,
             CancellationToken cancellationToken = default)

@@ -49,7 +49,7 @@ namespace StockLens_BusinessLayer.Services
 
         public async Task<StockNewsResponseDto> GetLatestNewsByStockIdAsync(
             int stockId,
-            int limit = 20,
+            int limit = 5,
             int page = 1,
             bool forceRefresh = false,
             CancellationToken cancellationToken = default)
@@ -66,7 +66,7 @@ namespace StockLens_BusinessLayer.Services
         public async Task<StockNewsResponseDto> GetLatestNewsBySymbolAsync(
             string symbol,
             string? exchange = "NSE",
-            int limit = 20,
+            int limit = 5,
             int page = 1,
             bool forceRefresh = false,
             CancellationToken cancellationToken = default)

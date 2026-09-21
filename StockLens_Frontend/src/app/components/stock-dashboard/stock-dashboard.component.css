@@ -5,8 +5,7 @@
 :host {
   display: block;
   width: 100%;
-  height: 100vh;
-  max-height: 100vh;
+  height: 100%;
   overflow: hidden;
   background-color: #080b11;
   color: #f1f5f9;
@@ -27,18 +26,41 @@
   width: 100%;
   height: 100vh;
   max-height: 100vh;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: radial-gradient(circle at 50% 0%, #111827 0%, #080b11 85%);
+}
+
+/* Custom Scrollbar for Cockpit */
+.cockpit-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.cockpit-container::-webkit-scrollbar-track {
+  background: #080b11;
+}
+
+.cockpit-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+}
+
+.cockpit-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(56, 189, 248, 0.4);
 }
 
 /* ==========================================================================
    1. TOP APPLICATION HEADER & SEARCH BAR (~42px)
    ========================================================================== */
 .cockpit-header {
+  flex-shrink: 0;
+  flex: 0 0 auto;
+  position: relative;
   height: 42px;
   min-height: 42px;
   padding: 0 1rem;
-  background: rgba(14, 19, 31, 0.95);
+  background: rgba(14, 19, 31, 0.96);
+  backdrop-filter: blur(12px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   align-items: center;
@@ -288,6 +310,8 @@
    2. STOCK EXECUTIVE HEADER BAR (~38px)
    ========================================================================== */
 .stock-header-bar {
+  flex-shrink: 0;
+  flex: 0 0 auto;
   height: 38px;
   min-height: 38px;
   padding: 0 10px;
@@ -522,9 +546,11 @@
    3. KEY RATIOS HIGH-IMPACT HIGHLIGHTED BAR (8 KPI Grid) (~44px)
    ========================================================================== */
 .key-ratios-ribbon {
-  height: 44px;
-  min-height: 44px;
-  padding: 0 10px;
+  flex-shrink: 0;
+  flex: 0 0 auto;
+  min-height: fit-content;
+  height: auto;
+  padding: 6px 10px;
   background: linear-gradient(90deg, rgba(15, 23, 42, 0.98) 0%, rgba(20, 30, 52, 0.98) 50%, rgba(15, 23, 42, 0.98) 100%);
   border-top: 1.5px solid rgba(56, 189, 248, 0.35);
   border-bottom: 1.5px solid rgba(56, 189, 248, 0.35);
@@ -647,34 +673,35 @@
 }
 
 /* ==========================================================================
-   4. COCKPIT MAIN BODY (ZERO-SCROLL VIEWPORT - FLEX COLUMN)
+   4. COCKPIT MAIN BODY (FLEX COLUMN WITH RESPONSIVE SCROLLING)
    ========================================================================== */
 .cockpit-body {
-  flex: 1;
+  flex-shrink: 0;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  min-height: 0;
-  padding: 6px 10px 8px 10px;
-  overflow: hidden;
+  gap: 12px;
+  min-height: fit-content;
+  padding: 8px 12px 24px 12px;
 }
 
-/* Row 1: Chart & News (~55% remaining height) */
+/* Row 1: Chart & News (~55% remaining height, min 380px) */
 .cockpit-row-upper {
-  flex: 1.25;
-  min-height: 0;
+  flex: 0 0 auto;
+  min-height: 380px;
   display: grid;
   grid-template-columns: 62% 38%;
-  gap: 6px;
+  gap: 12px;
 }
 
-/* Row 2: 4-Column Fundamental Grid (~45% remaining height) */
+/* Row 2: 4-Column Fundamental Grid */
 .cockpit-row-lower {
-  flex: 1.0;
-  min-height: 0;
+  flex: 0 0 auto;
+  min-height: fit-content;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
+  gap: 10px;
+  align-items: stretch;
 }
 
 /* Common Cockpit Card Styling */
@@ -684,21 +711,45 @@
   border-radius: 8px;
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
+  min-height: fit-content;
+  height: 100%;
   backdrop-filter: blur(10px);
 }
 
+.chart-card {
+  min-height: 380px;
+}
+
+.news-card {
+  min-height: 380px;
+}
+
+.fundamental-card {
+  min-height: fit-content;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.fundamental-card .card-inner-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: fit-content;
+}
+
 .card-top-bar {
-  height: 30px;
-  min-height: 30px;
-  padding: 0 0.65rem;
+  min-height: 34px;
+  height: auto;
+  padding: 4px 0.65rem;
   background: rgba(255, 255, 255, 0.025);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.4rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 .card-title-group {
@@ -737,7 +788,8 @@
 .chart-checkbox-group {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.65rem;
+  flex-wrap: wrap;
   user-select: none;
 }
 
@@ -845,9 +897,9 @@
   flex: 1;
   width: 100%;
   height: 100%;
-  min-height: 0;
+  min-height: 340px;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 
 /* News Feed Scrollable Stream */
@@ -941,12 +993,11 @@
 .card-inner-content {
   flex: 1;
   min-height: 0;
-  padding: 0.35rem 0.55rem;
+  padding: 0.35rem 0.5rem 0.4rem 0.5rem;
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;
-  gap: 0.28rem;
-  overflow: hidden;
+  justify-content: space-between;
+  gap: 0.25rem;
 }
 
 .split-content-col {
@@ -954,26 +1005,32 @@
   flex-direction: column;
   justify-content: space-between;
   height: 100%;
-  gap: 0.35rem;
+  min-height: 0;
+  gap: 0.25rem;
 }
 
 .sub-section {
   display: flex;
   flex-direction: column;
-  flex: 1;
   justify-content: flex-start;
-  gap: 0.2rem;
+  gap: 0.18rem;
+  flex: 0 0 auto;
   min-height: 0;
 }
 
+.sub-section + .sub-section {
+  margin-top: 0.35rem;
+}
+
 .sub-section-heading {
-  font-size: clamp(0.58rem, 0.65vw, 0.65rem);
+  font-size: 0.62rem;
   font-weight: 800;
   color: #64748b;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   margin-bottom: 0.1rem;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* Card 1: Ownership */
@@ -982,45 +1039,109 @@
   flex-direction: column;
   justify-content: space-between;
   height: 100%;
-  gap: 0.28rem;
+  gap: 0.25rem;
   min-height: 0;
 }
 
 .ownership-quad-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.28rem;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+/* Card 3: Efficiency Ratios Trio Grid */
+.efficiency-trio-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.25rem;
+  margin-top: 0.08rem;
+  margin-bottom: 0;
+  flex-shrink: 0;
+}
+
+.efficiency-trio-grid .quad-box {
+  padding: 0.18rem 0.35rem;
+  min-height: 2.25rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-sizing: border-box;
+}
+
+.efficiency-trio-grid .quad-label-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.04rem;
+  min-width: 0;
+}
+
+.efficiency-trio-grid .quad-label {
+  font-size: 0.64rem;
+  font-weight: 600;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  white-space: nowrap;
+}
+
+.quad-bottom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.15rem;
+  min-width: 0;
+  margin-top: 0.04rem;
+}
+
+.efficiency-trio-grid .quad-value {
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #f8fafc;
+  white-space: nowrap;
+}
+
+.efficiency-trio-grid .delta-tag {
+  font-size: 0.52rem;
+  font-weight: 800;
+  padding: 0.02rem 0.18rem;
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .quad-box {
   background: rgba(255, 255, 255, 0.025);
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 5px;
-  padding: 0.24rem 0.45rem;
+  padding: 0.22rem 0.42rem;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  min-height: 2.35rem;
+  min-height: 2.25rem;
   min-width: 0;
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 .quad-label-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 0.1rem;
-  gap: 0.2rem;
+  margin-bottom: 0.06rem;
+  gap: 0.18rem;
   min-width: 0;
 }
 
 .quad-label {
-  font-size: clamp(0.62rem, 0.7vw, 0.72rem);
+  font-size: 0.65rem;
   color: #94a3b8;
   font-weight: 600;
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.22rem;
   white-space: nowrap;
   min-width: 0;
   overflow: hidden;
@@ -1052,17 +1173,17 @@
 }
 
 .delta-tag {
-  font-size: clamp(0.54rem, 0.6vw, 0.62rem);
+  font-size: 0.54rem;
   font-weight: 800;
   white-space: nowrap;
   flex-shrink: 0;
-  padding: 0.04rem 0.22rem;
+  padding: 0.02rem 0.18rem;
   border-radius: 3px;
 }
 
 .quad-value {
   font-family: 'Outfit', sans-serif;
-  font-size: clamp(0.78rem, 0.88vw, 0.95rem);
+  font-size: 0.88rem;
   font-weight: 800;
   color: #f8fafc;
   white-space: nowrap;
@@ -1072,12 +1193,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.22rem 0.5rem;
+  padding: 0.2rem 0.45rem;
   background: rgba(56, 189, 248, 0.05);
   border: 1px solid rgba(56, 189, 248, 0.15);
   border-radius: 4px;
-  font-size: clamp(0.64rem, 0.7vw, 0.72rem);
+  font-size: 0.68rem;
   white-space: nowrap;
+  min-height: 1.65rem;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .inst-lbl {
@@ -1092,19 +1216,18 @@
 }
 
 .mini-trend-table-wrapper {
-  overflow: hidden;
+  overflow-x: auto;
   flex: 1;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  margin-top: 0.05rem;
   min-height: 0;
 }
 
 .mini-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: clamp(0.62rem, 0.68vw, 0.72rem);
+  font-size: 0.68rem;
   white-space: nowrap;
 }
 
@@ -1112,18 +1235,18 @@
   color: #64748b;
   font-weight: 700;
   text-align: left;
-  padding: 0.16rem 0.25rem;
+  padding: 0.14rem 0.25rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   white-space: nowrap;
 }
 
 .mini-table td {
-  padding: 0.16rem 0.25rem;
+  padding: 0.14rem 0.25rem;
   font-weight: 700;
   white-space: nowrap;
 }
 
-/* Card 2: Latest Quarter (Space-Filling Stack) */
+/* Card 2: Latest Quarter */
 .quarter-metrics-stack {
   display: flex;
   flex-direction: column;
@@ -1141,10 +1264,10 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  flex: 1;
-  min-height: 0;
+  gap: 0.08rem;
+  min-height: 2.15rem;
   min-width: 0;
-  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .q-metric-item.highlight-q {
@@ -1162,7 +1285,7 @@
 }
 
 .q-label {
-  font-size: clamp(0.62rem, 0.68vw, 0.72rem);
+  font-size: 0.68rem;
   color: #94a3b8;
   font-weight: 600;
   white-space: nowrap;
@@ -1171,14 +1294,11 @@
 
 .q-val {
   font-family: 'Outfit', sans-serif;
-  font-size: clamp(0.76rem, 0.84vw, 0.92rem);
+  font-size: 0.88rem;
   font-weight: 800;
   color: #f8fafc;
-  margin-top: 0.02rem;
   line-height: 1.15;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .q-deltas {
@@ -1190,26 +1310,25 @@
 }
 
 .mini-delta {
-  font-size: clamp(0.52rem, 0.58vw, 0.6rem);
+  font-size: 0.55rem;
   font-weight: 800;
-  padding: 0.02rem 0.2rem;
+  padding: 0.02rem 0.18rem;
   border-radius: 3px;
   white-space: nowrap;
 }
 
 .mini-tag {
-  font-size: clamp(0.52rem, 0.58vw, 0.6rem);
+  font-size: 0.55rem;
   color: #64748b;
   font-weight: 600;
   white-space: nowrap;
 }
 
-/* Sub Grid for EPS, Tax, Depreciation, Interest (2 cards per row) */
+/* Sub Grid for EPS, Tax, Depreciation, Interest (2x2 grid) */
 .q-trio-row {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 0.22rem;
-  flex: 2;
   min-height: 0;
 }
 
@@ -1217,31 +1336,29 @@
   background: rgba(255, 255, 255, 0.025);
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 5px;
-  padding: 0.18rem 0.42rem;
+  padding: 0.18rem 0.38rem;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  min-height: 0;
+  gap: 0.06rem;
+  min-height: 2.05rem;
   min-width: 0;
-  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .q-sub-box .q-val {
-  font-size: clamp(0.72rem, 0.8vw, 0.86rem);
+  font-size: 0.82rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.15;
-  margin-top: 0.02rem;
 }
 
 /* Unified Clean List Rows (Cards 3 & 4) */
 .cflow-list {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  justify-content: space-around;
-  gap: 0.28rem;
+  gap: 0.22rem;
   min-height: 0;
 }
 
@@ -1249,16 +1366,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex: 1;
-  min-height: 1.65rem;
-  padding: 0.22rem 0.48rem;
+  min-height: 1.75rem;
+  padding: 0.18rem 0.45rem;
   gap: 0.3rem;
   min-width: 0;
-  overflow: hidden;
   background: rgba(255, 255, 255, 0.025);
   border: 1px solid rgba(255, 255, 255, 0.045);
   border-radius: 5px;
   transition: background 0.2s ease, border-color 0.2s ease;
+  box-sizing: border-box;
 }
 
 .cflow-item:hover {
@@ -1269,15 +1385,14 @@
 .cf-left {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.3rem;
   min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  flex-shrink: 1;
+  flex: 1;
+  flex-wrap: wrap;
 }
 
 .cf-name {
-  font-size: clamp(0.62rem, 0.68vw, 0.72rem);
+  font-size: 0.66rem;
   color: #cbd5e1;
   font-weight: 600;
   white-space: nowrap;
@@ -1286,7 +1401,8 @@
 }
 
 .cf-val {
-  font-size: clamp(0.72rem, 0.78vw, 0.82rem);
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.78rem;
   font-weight: 800;
   color: #f8fafc;
   white-space: nowrap;
@@ -1386,118 +1502,83 @@
 }
 
 /* ==========================================================================
-   RESPONSIVE MEDIA QUERIES FOR SMALLER LAPTOPS AND VIEWPORTS
+   RESPONSIVE MEDIA QUERIES FOR LAPTOPS, TABLETS, ZOOM LEVELS (125%, 150%, 175%)
+   (ZERO HORIZONTAL SCROLL & ZERO TEXT OVERLAP/CUTOFF)
    ========================================================================== */
-@media (max-width: 1440px) {
+@media (max-width: 1560px) {
   .key-ratios-ribbon {
-    grid-template-columns: 1.4fr 1.2fr 0.85fr 0.85fr 0.95fr 0.85fr 0.78fr 0.78fr;
-    gap: 5px;
-    padding: 0 8px;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    padding: 6px 8px;
   }
 
   .ratio-card {
-    padding: 0.18rem 0.35rem;
-    gap: 0.2rem;
-  }
-
-  .cockpit-header {
-    padding: 0 0.75rem;
-    gap: 0.75rem;
-  }
-
-  .stock-header-bar {
-    padding: 0 8px;
-    gap: 0.5rem;
-  }
-
-  .cockpit-body {
-    padding: 4px 8px 6px 8px;
-    gap: 5px;
-  }
-}
-
-@media (max-width: 1280px) {
-  .key-ratios-ribbon {
-    grid-template-columns: 1.35fr 1.15fr 0.82fr 0.82fr 0.9fr 0.82fr 0.75fr 0.75fr;
-    gap: 4px;
-    padding: 0 6px;
-  }
-
-  .ratio-card {
-    padding: 0.15rem 0.3rem;
-    gap: 0.15rem;
-  }
-
-  .ratio-card-label {
-    font-size: 0.54rem;
-  }
-
-  .ratio-card-value {
-    font-size: 0.74rem;
+    padding: 0.25rem 0.5rem;
+    height: 34px;
   }
 
   .cockpit-row-upper {
-    grid-template-columns: 60% 40%;
+    grid-template-columns: 58% 42%;
+    gap: 12px;
+  }
+
+  .cockpit-row-lower {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
   }
 }
 
-@media (max-height: 850px) {
+@media (max-width: 1150px) {
+  .cockpit-row-upper {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
   .cockpit-header {
-    height: 38px;
-    min-height: 38px;
+    height: auto;
+    min-height: 42px;
+    padding: 6px 0.75rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .header-center {
+    order: 3;
+    max-width: 100%;
+    width: 100%;
+    flex: 1 1 100%;
   }
 
   .stock-header-bar {
-    height: 34px;
-    min-height: 34px;
-  }
-
-  .key-ratios-ribbon {
-    height: 38px;
+    height: auto;
     min-height: 38px;
+    padding: 6px 8px;
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
 
-  .ratio-card {
-    height: 30px;
+  .company-title-row {
+    flex-wrap: wrap;
   }
 
-  .card-top-bar {
-    height: 26px;
-    min-height: 26px;
+  .stock-header-right {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 768px) {
+  .key-ratios-ribbon {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
   }
 
-  .cockpit-body {
-    padding: 3px 6px 4px 6px;
-    gap: 4px;
+  .cockpit-row-lower {
+    grid-template-columns: 1fr;
+    gap: 12px;
   }
 
-  .card-inner-content {
-    padding: 0.25rem 0.45rem;
-    gap: 0.2rem;
-  }
-
-  .quad-box {
-    padding: 0.18rem 0.38rem;
-    min-height: 2.1rem;
-  }
-
-  .q-metric-item {
-    padding: 0.16rem 0.38rem;
-    min-height: 0;
-  }
-
-  .q-trio-row {
-    flex: 2;
-    gap: 0.18rem;
-  }
-
-  .q-sub-box {
-    padding: 0.14rem 0.32rem;
-    min-height: 0;
-  }
-
-  .cflow-item {
-    min-height: 1.4rem;
-    padding: 0.16rem 0.38rem;
+  .efficiency-trio-grid {
+    grid-template-columns: 1fr;
+    gap: 0.4rem;
   }
 }

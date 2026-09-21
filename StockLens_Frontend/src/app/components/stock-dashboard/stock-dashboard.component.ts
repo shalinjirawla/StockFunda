@@ -368,7 +368,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     const symbol = this.selectedSymbol();
     const exchange = this.selectedExchange();
 
-    this.newsService.getNewsBySymbol(symbol, exchange, 25, 1, isRefresh).subscribe({
+    this.newsService.getNewsBySymbol(symbol, exchange, 5, 1, isRefresh).subscribe({
       next: (data) => {
         this.newsResponse.set(data);
         this.isNewsRefreshing.set(false);
@@ -639,6 +639,13 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
       return +(cfo / op).toFixed(2);
     }
     return null;
+  }
+
+  getTotalInstitutional(): string {
+    const sh = this.shareholdingResponse()?.currentPeriod;
+    if (!sh || (sh.fii === null && sh.dii === null)) return '—';
+    const total = (sh.fii || 0) + (sh.dii || 0);
+    return `${total.toFixed(2)}%`;
   }
 
   formatCfoToOp(value?: number | null): string {

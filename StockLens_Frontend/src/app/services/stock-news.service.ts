@@ -29,7 +29,7 @@ export class StockNewsService {
   /**
    * Fetch latest news by Stock ID.
    */
-  getNewsByStockId(stockId: number, limit = 20, page = 1, refresh = false): Observable<StockNewsResponse> {
+  getNewsByStockId(stockId: number, limit = 5, page = 1, refresh = false): Observable<StockNewsResponse> {
     const params = new HttpParams()
       .set('limit', limit.toString())
       .set('page', page.toString())
@@ -41,7 +41,7 @@ export class StockNewsService {
   /**
    * Fetch latest news by Stock Ticker Symbol and Exchange.
    */
-  getNewsBySymbol(symbol: string, exchange = 'NSE', limit = 20, page = 1, refresh = false): Observable<StockNewsResponse> {
+  getNewsBySymbol(symbol: string, exchange = 'NSE', limit = 5, page = 1, refresh = false): Observable<StockNewsResponse> {
     const params = new HttpParams()
       .set('symbol', symbol)
       .set('exchange', exchange)
