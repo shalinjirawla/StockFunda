@@ -70,6 +70,7 @@ namespace StockLens_UnitTests
                 _mapper,
                 NullLogger<StockCashflowService>.Instance,
                 _mockIndianApiClient.Object,
+                null,
                 _mockYahooFinanceClient.Object
             );
         }

@@ -43,6 +43,12 @@ export interface StockRatios {
   sectorPeSector?: string | null;
   sectorPeAsOfDate?: string | null;
   pegRatio?: number | null;
+  debtorDays?: number | null;
+  debtorDaysYoY?: number | null;
+  inventoryDays?: number | null;
+  inventoryDaysYoY?: number | null;
+  payableDays?: number | null;
+  payableDaysYoY?: number | null;
 }
 
 

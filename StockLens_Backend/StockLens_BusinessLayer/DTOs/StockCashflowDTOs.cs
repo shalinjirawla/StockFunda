@@ -45,6 +45,13 @@ namespace StockLens_BusinessLayer.DTOs
         public string? SectorPeSector { get; set; }
         public string? SectorPeAsOfDate { get; set; }
         public decimal? PegRatio { get; set; }
+
+        public decimal? DebtorDays { get; set; }
+        public decimal? DebtorDaysYoY { get; set; }
+        public decimal? InventoryDays { get; set; }
+        public decimal? InventoryDaysYoY { get; set; }
+        public decimal? PayableDays { get; set; }
+        public decimal? PayableDaysYoY { get; set; }
     }
 
 

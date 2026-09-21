@@ -234,6 +234,21 @@ namespace StockLens_DataLayer.Entities
         [System.ComponentModel.DataAnnotations.Schema.NotMapped]
         public string? SectorPeSector { get; set; }
 
+        /// <summary>
+        /// Debtor Days (Receivable Days) - measures how quickly cash is collected.
+        /// </summary>
+        public decimal? DebtorDays { get; set; }
+
+        /// <summary>
+        /// Inventory Days - measures how many days it takes to turn inventory into sales.
+        /// </summary>
+        public decimal? InventoryDays { get; set; }
+
+        /// <summary>
+        /// Days Payable - measures how long it takes to pay trade creditors.
+        /// </summary>
+        public decimal? PayableDays { get; set; }
+
         public string Source { get; set; } = "BharatStock";
         public DateTime LastSyncedAt { get; set; } = DateTime.UtcNow;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

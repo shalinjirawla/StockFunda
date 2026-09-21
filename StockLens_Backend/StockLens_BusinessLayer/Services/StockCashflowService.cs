@@ -31,6 +31,7 @@ namespace StockLens_BusinessLayer.Services
         private readonly IMapper _mapper;
         private readonly ILogger<StockCashflowService> _logger;
         private readonly IIndianApiBalanceSheetClient? _indianApiClient;
+        private readonly IIndianApiRatiosClient? _indianApiRatiosClient;
         private readonly IYahooFinanceClient? _yahooFinanceClient;
 
         private static readonly ConcurrentDictionary<int, SemaphoreSlim> StockLocks = new();
@@ -45,6 +46,7 @@ namespace StockLens_BusinessLayer.Services
             IMapper mapper,
             ILogger<StockCashflowService> logger,
             IIndianApiBalanceSheetClient? indianApiClient = null,
+            IIndianApiRatiosClient? indianApiRatiosClient = null,
             IYahooFinanceClient? yahooFinanceClient = null)
         {
             _stockRepository = stockRepository;
@@ -56,6 +58,7 @@ namespace StockLens_BusinessLayer.Services
             _mapper = mapper;
             _logger = logger;
             _indianApiClient = indianApiClient;
+            _indianApiRatiosClient = indianApiRatiosClient;
             _yahooFinanceClient = yahooFinanceClient;
         }
 
@@ -113,6 +116,7 @@ namespace StockLens_BusinessLayer.Services
                     var cur = dbFinancials[0];
                     var dbBs = await _balanceSheetRepository.GetRecentByStockIdAsync(stock.Id, 1);
                     var latestBsDb = dbBs.FirstOrDefault();
+                    var prevDb = dbFinancials.Count > 1 ? dbFinancials[1] : null;
 
                     // If cached entity is missing ratios or 52W high/low/facevalue, sync from IndianAPI
                     if (cur.Roe == null ||
@@ -163,7 +167,6 @@ namespace StockLens_BusinessLayer.Services
                         if (cur.BookValue.HasValue && cur.BookValue.Value > 0)
                             cur.PbRatio = Math.Round(cur.CurrentPrice.Value / cur.BookValue.Value, 2);
 
-                        var prevDb = dbFinancials.Count > 1 ? dbFinancials[1] : null;
                         var epsGrowth = CalculatePercentageGrowth(cur.Eps, prevDb?.Eps) ?? CalculatePercentageGrowth(cur.NetProfit, prevDb?.NetProfit);
                         if (cur.PeRatio.HasValue && epsGrowth.HasValue && epsGrowth.Value > 0)
                             cur.PegRatio = Math.Round(cur.PeRatio.Value / epsGrowth.Value, 2);
@@ -233,7 +236,6 @@ namespace StockLens_BusinessLayer.Services
 
                     if (cur.PeRatio.HasValue && (!cur.PegRatio.HasValue || cur.PegRatio == 0))
                     {
-                        var prevDb = dbFinancials.Count > 1 ? dbFinancials[1] : null;
                         var epsGrowth = CalculatePercentageGrowth(cur.Eps, prevDb?.Eps) ?? CalculatePercentageGrowth(cur.NetProfit, prevDb?.NetProfit);
                         if (epsGrowth.HasValue && epsGrowth.Value > 0)
                             cur.PegRatio = Math.Round(cur.PeRatio.Value / epsGrowth.Value, 2);
@@ -272,10 +274,14 @@ namespace StockLens_BusinessLayer.Services
                         BookValue = cur.BookValue,
                         MarketCap = mCap,
                         MarketCapSource = mSource,
-                        SectorPe = cur.SectorPe,
-                        SectorPeSector = cur.SectorPeSector,
                         SectorPeAsOfDate = cur.RatiosAsOfDate,
-                        PegRatio = cur.PegRatio
+                        PegRatio = cur.PegRatio,
+                        DebtorDays = cur.DebtorDays,
+                        DebtorDaysYoY = CalculatePercentageGrowth(cur.DebtorDays, prevDb?.DebtorDays),
+                        InventoryDays = cur.InventoryDays,
+                        InventoryDaysYoY = CalculatePercentageGrowth(cur.InventoryDays, prevDb?.InventoryDays),
+                        PayableDays = cur.PayableDays,
+                        PayableDaysYoY = CalculatePercentageGrowth(cur.PayableDays, prevDb?.PayableDays)
                     };
                 }
             }
@@ -577,6 +583,11 @@ namespace StockLens_BusinessLayer.Services
                     }
                 }
 
+                // Efficiency ratios are now fetched during the main sync cycle (SyncFromIndianApiAsync).
+                // To avoid hammering the API on every cache hit for stocks that genuinely lack ratio data,
+                // we do not lazily fetch them here. If missing, a full sync (forceRefresh=true) will retrieve them.
+                var prevEntity = existingEntities.Count > 1 ? existingEntities[1] : null;
+
                 // 2. ALWAYS fetch and apply real-time live price & 52W High/Low from Yahoo Finance
                 try
                 {
@@ -594,7 +605,7 @@ namespace StockLens_BusinessLayer.Services
                         if (cur.BookValue.HasValue && cur.BookValue.Value > 0)
                             cur.PbRatio = Math.Round(cur.CurrentPrice.Value / cur.BookValue.Value, 2);
 
-                        var prevEntity = existingEntities.Count > 1 ? existingEntities[1] : null;
+                        prevEntity = existingEntities.Count > 1 ? existingEntities[1] : null;
                         var epsGrowth = CalculatePercentageGrowth(cur.Eps, prevEntity?.Eps) ?? CalculatePercentageGrowth(cur.NetProfit, prevEntity?.NetProfit);
                         if (cur.PeRatio.HasValue && epsGrowth.HasValue && epsGrowth.Value > 0)
                             cur.PegRatio = Math.Round(cur.PeRatio.Value / epsGrowth.Value, 2);
@@ -676,7 +687,7 @@ namespace StockLens_BusinessLayer.Services
 
                 if (cur.PeRatio.HasValue && (!cur.PegRatio.HasValue || cur.PegRatio == 0))
                 {
-                    var prevEntity = existingEntities.Count > 1 ? existingEntities[1] : null;
+                    prevEntity = existingEntities.Count > 1 ? existingEntities[1] : null;
                     var epsGrowth = CalculatePercentageGrowth(cur.Eps, prevEntity?.Eps) ?? CalculatePercentageGrowth(cur.NetProfit, prevEntity?.NetProfit);
                     if (epsGrowth.HasValue && epsGrowth.Value > 0)
                         cur.PegRatio = Math.Round(cur.PeRatio.Value / epsGrowth.Value, 2);
@@ -768,11 +779,21 @@ namespace StockLens_BusinessLayer.Services
             _logger.LogInformation("Attempting primary financial & cashflow sync from IndianAPI for {Symbol}", stock.Symbol);
             var dataTask = _indianApiClient.GetStockFinancialsAndOverviewAsync(stock.Symbol, stock.Exchange, cancellationToken);
             var liveQuoteTask = GetLiveQuoteInternalAsync(stock.Symbol, stock.Exchange, cancellationToken);
+            
+            async Task<IReadOnlyList<StockLens_Infrastructure.ExternalServices.IndianApi.Models.IndianApiNormalizedRatioRecord>?> SafeGetRatiosAsync()
+            {
+                if (_indianApiRatiosClient == null) return null;
+                try { return await _indianApiRatiosClient.GetRatiosAsync(stock.Symbol, cancellationToken); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Failed to fetch ratios for {Symbol}", stock.Symbol); return null; }
+            }
 
-            await Task.WhenAll(dataTask, liveQuoteTask);
+            var ratiosTask = SafeGetRatiosAsync();
+
+            await Task.WhenAll(dataTask, liveQuoteTask, ratiosTask);
 
             var data = await dataTask;
             var liveQuote = await liveQuoteTask;
+            var ratiosData = await ratiosTask;
 
             if (data == null || data.Financials.Count == 0)
             {
@@ -831,6 +852,8 @@ namespace StockLens_BusinessLayer.Services
             var latestAnnual = annualPeriods.FirstOrDefault() ?? periodsToSave.FirstOrDefault(p => string.Equals(p.PeriodType, "annual", StringComparison.OrdinalIgnoreCase)) ?? periodsToSave.FirstOrDefault();
             var prevAnnual = annualPeriods.Count > 1 ? annualPeriods[1] : null;
 
+            var existingEntitiesForStock = await _financialRepository.GetFinancialsByStockIdAsync(stock.Id, "all", 50);
+
             for (int i = 0; i < periodsToSave.Count; i++)
             {
                 var period = periodsToSave[i];
@@ -844,12 +867,29 @@ namespace StockLens_BusinessLayer.Services
                 var capex = period.Capex;
                 var fcf = period.FreeCashFlow;
 
+                decimal? dDays = null, iDays = null, pDays = null;
+                if (ratiosData != null && string.Equals(period.PeriodType, "annual", StringComparison.OrdinalIgnoreCase))
+                {
+                    var pYearStr = period.PeriodEndDate?.ToString("yyyy") ?? period.FiscalYear?.Replace("FY", "20");
+                    var matchedRatio = ratiosData.FirstOrDefault(r => r.PeriodDate?.ToString("yyyy") == pYearStr);
+                    if (matchedRatio != null)
+                    {
+                        dDays = matchedRatio.DebtorDays;
+                        iDays = matchedRatio.InventoryDays;
+                        pDays = matchedRatio.PayableDays;
+                    }
+                }
+
                 var matchingBs = balanceSheets.FirstOrDefault(b =>
                     (!string.IsNullOrEmpty(b.FiscalYear) && b.FiscalYear.Equals(period.FiscalYear, StringComparison.OrdinalIgnoreCase)) ||
                     (b.PeriodEndDate.HasValue && period.PeriodEndDate.HasValue && b.PeriodEndDate.Value.Date == period.PeriodEndDate.Value.Date))
                     ?? (period == latestAnnual ? balanceSheets.FirstOrDefault() : null);
 
-                var existing = await _financialRepository.GetByStockIdAndPeriodKeyAsync(stock.Id, periodKey);
+                var existing = existingEntitiesForStock.FirstOrDefault(e =>
+                    (!string.IsNullOrEmpty(e.PeriodKey) && e.PeriodKey.Equals(periodKey, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(e.FiscalYear) && !string.IsNullOrEmpty(period.FiscalYear) && e.FiscalYear.Equals(period.FiscalYear, StringComparison.OrdinalIgnoreCase) && string.Equals(e.PeriodType, period.PeriodType ?? "annual", StringComparison.OrdinalIgnoreCase)) ||
+                    (e.PeriodEndDate.HasValue && period.PeriodEndDate.HasValue && e.PeriodEndDate.Value.Date == period.PeriodEndDate.Value.Date && string.Equals(e.PeriodType, period.PeriodType ?? "annual", StringComparison.OrdinalIgnoreCase))
+                ) ?? await _financialRepository.GetByStockIdAndPeriodKeyAsync(stock.Id, periodKey);
                 if (existing != null)
                 {
                     existing.FiscalYear = period.FiscalYear;
@@ -878,6 +918,10 @@ namespace StockLens_BusinessLayer.Services
                     if (period.TotalEquity.HasValue) existing.TotalEquity = period.TotalEquity;
                     if (period.BookValuePerShare.HasValue) existing.BookValue = period.BookValuePerShare;
                     existing.ConsolidationType = period.ConsolidationType ?? "consolidated";
+
+                    if (dDays.HasValue) existing.DebtorDays = dDays;
+                    if (iDays.HasValue) existing.InventoryDays = iDays;
+                    if (pDays.HasValue) existing.PayableDays = pDays;
 
                     if (period == latestAnnual)
                     {
@@ -920,6 +964,9 @@ namespace StockLens_BusinessLayer.Services
                         NetCashFlow = period.NetCashFlow,
                         BookValue = period.BookValuePerShare,
                         ConsolidationType = period.ConsolidationType ?? "consolidated",
+                        DebtorDays = dDays,
+                        InventoryDays = iDays,
+                        PayableDays = pDays,
                         Source = "IndianAPI",
                         LastSyncedAt = now,
                         CreatedAt = now,
@@ -1676,7 +1723,13 @@ namespace StockLens_BusinessLayer.Services
                 SectorPe = sectorPe,
                 SectorPeSector = sectorName,
                 SectorPeAsOfDate = sectorAsOfDate,
-                PegRatio = pegRatio
+                PegRatio = pegRatio,
+                DebtorDays = current.DebtorDays,
+                DebtorDaysYoY = CalculatePercentageGrowth(current.DebtorDays, previous?.DebtorDays),
+                InventoryDays = current.InventoryDays,
+                InventoryDaysYoY = CalculatePercentageGrowth(current.InventoryDays, previous?.InventoryDays),
+                PayableDays = current.PayableDays,
+                PayableDaysYoY = CalculatePercentageGrowth(current.PayableDays, previous?.PayableDays)
             };
 
             if (!current.Interest.HasValue || !current.Depreciation.HasValue)

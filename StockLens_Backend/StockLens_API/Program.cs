@@ -65,6 +65,15 @@ builder.Services.AddHttpClient<IIndianApiHistoricalDataClient, IndianApiHistoric
     client.DefaultRequestHeaders.Add("Accept", "application/json");
 });
 
+builder.Services.AddHttpClient<IIndianApiRatiosClient, IndianApiRatiosClient>((serviceProvider, client) =>
+{
+    var config = builder.Configuration.GetSection(IndianApiSettings.SectionName).Get<IndianApiSettings>() ?? new IndianApiSettings();
+    var baseUrl = !string.IsNullOrWhiteSpace(config.BaseUrl) ? config.BaseUrl.TrimEnd('/') + "/" : "https://stock.indianapi.in/";
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromSeconds(config.TimeoutSeconds > 0 ? config.TimeoutSeconds : 20);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+});
+
 // Configure Backup In-Memory Providers (Strictly safe in-memory fallbacks to prevent 429 Rate Limits)
 builder.Services.Configure<BharatStockSettings>(builder.Configuration.GetSection(BharatStockSettings.SectionName));
 builder.Services.AddScoped<IShareholdingProvider, MockShareholdingProvider>();
@@ -97,6 +106,7 @@ builder.Services.AddScoped<IStockCashflowService, StockCashflowService>();
 builder.Services.AddScoped<IStockBalanceSheetService, StockBalanceSheetService>();
 builder.Services.AddScoped<IStockPriceHistoryService, StockPriceHistoryService>();
 builder.Services.AddScoped<IStockQuarterlyResultsService, StockQuarterlyResultsService>();
+builder.Services.AddScoped<IStockOrderBookService, StockOrderBookService>();
 
 // Register AutoMapper
 builder.Services.AddAutoMapper(cfg => cfg.AddProfile<MapperProfile>());

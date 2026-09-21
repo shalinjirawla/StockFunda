@@ -687,6 +687,51 @@
               </div>
             </div>
           </div>
+
+          <!-- EFFICIENCY RATIOS -->
+          <div class="sub-section">
+            <span class="sub-section-heading">EFFICIENCY RATIOS</span>
+            <div class="shareholding-grid" style="margin-top: 12px;">
+              <!-- Debtor Days -->
+              <div class="quad-box">
+                <div class="quad-label-row">
+                  <span class="quad-label"><span class="dot dot-amber"></span>Debtor Days</span>
+                  @if (cashflowResponse()?.ratios?.debtorDaysYoY; as g) {
+                  <span class="delta-tag" [ngClass]="getChangeClass(-g)">
+                    {{ getArrow(g) }} {{ formatPercent(g) }}
+                  </span>
+                  }
+                </div>
+                <div class="quad-value">{{ cashflowResponse()?.ratios?.debtorDays != null ? cashflowResponse()?.ratios?.debtorDays + ' Days' : '—' }}</div>
+              </div>
+
+              <!-- Inventory Days -->
+              <div class="quad-box">
+                <div class="quad-label-row">
+                  <span class="quad-label"><span class="dot dot-emerald"></span>Inventory Days</span>
+                  @if (cashflowResponse()?.ratios?.inventoryDaysYoY; as g) {
+                  <span class="delta-tag" [ngClass]="getChangeClass(-g)">
+                    {{ getArrow(g) }} {{ formatPercent(g) }}
+                  </span>
+                  }
+                </div>
+                <div class="quad-value">{{ cashflowResponse()?.ratios?.inventoryDays != null ? cashflowResponse()?.ratios?.inventoryDays + ' Days' : '—' }}</div>
+              </div>
+
+              <!-- Payable Days -->
+              <div class="quad-box">
+                <div class="quad-label-row">
+                  <span class="quad-label"><span class="dot dot-cyan"></span>Payable Days</span>
+                  @if (cashflowResponse()?.ratios?.payableDaysYoY; as g) {
+                  <span class="delta-tag" [ngClass]="getChangeClass(g)">
+                    {{ getArrow(g) }} {{ formatPercent(g) }}
+                  </span>
+                  }
+                </div>
+                <div class="quad-value">{{ cashflowResponse()?.ratios?.payableDays != null ? cashflowResponse()?.ratios?.payableDays + ' Days' : '—' }}</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
