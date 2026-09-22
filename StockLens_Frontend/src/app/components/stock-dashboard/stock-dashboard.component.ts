@@ -8,10 +8,12 @@ import { StockShareholdingService } from '../../services/stock-shareholding.serv
 import { StockCashflowService } from '../../services/stock-cashflow.service';
 import { StockBalanceSheetService, BalanceSheetResponseDto } from '../../services/stock-balancesheet.service';
 import { StockQuarterlyResultsService } from '../../services/stock-quarterly-results.service';
+import { StockEvaluationService } from '../../services/stock-evaluation.service';
 import { Stock, Company, StockNewsResponse, StockNewsItem, LoadingState } from '../../models/stock-news.model';
 import { StockShareholdingResponse } from '../../models/stock-shareholding.model';
 import { StockCashflowResponse } from '../../models/stock-cashflow.model';
 import { StockQuarterlyResultsResponse } from '../../models/stock-quarterly-results.model';
+import { StockHealthScoreResponse } from '../../models/stock-evaluation.model';
 import { TimeAgoPipe } from '../../pipes/time-ago.pipe';
 import { StockPriceChartComponent } from '../stock-price-chart/stock-price-chart.component';
 
@@ -36,6 +38,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
   private readonly cashflowService = inject(StockCashflowService);
   private readonly financialsService = inject(StockBalanceSheetService);
   private readonly quartersService = inject(StockQuarterlyResultsService);
+  private readonly evaluationService = inject(StockEvaluationService);
   private readonly cd = inject(ChangeDetectorRef);
 
   // Quick select stocks
@@ -88,6 +91,11 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
   newsLoadingState = signal<LoadingState>('idle');
   newsErrorMessage = signal<string>('');
   isNewsRefreshing = signal<boolean>(false);
+
+  // Stock Evaluation State (Good / Neutral / Bad Signal Engine)
+  evaluationResponse = signal<StockHealthScoreResponse | null>(null);
+  isEvaluationRefreshing = signal<boolean>(false);
+  isEvaluationModalOpen = signal<boolean>(false);
 
   // Global Refresh State
   isSyncingAll = signal<boolean>(false);
@@ -245,6 +253,67 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     this.fetchShareholding(isRefresh);
     this.fetchQuarterlyResults(isRefresh);
     this.fetchNews(isRefresh);
+    this.fetchEvaluation(isRefresh);
+  }
+
+  fetchEvaluation(isRefresh: boolean): void {
+    const symbol = this.selectedSymbol();
+    const exchange = this.selectedExchange();
+    if (!symbol) return;
+
+    if (isRefresh) {
+      this.isEvaluationRefreshing.set(true);
+    }
+
+    this.evaluationService.getEvaluation(symbol, exchange, isRefresh).subscribe({
+      next: (data) => {
+        if (data && this.selectedSymbol() === symbol) {
+          this.evaluationResponse.set(data);
+        } else {
+          this.recomputeEvaluation();
+        }
+        this.isEvaluationRefreshing.set(false);
+      },
+      error: () => {
+        this.recomputeEvaluation();
+        this.isEvaluationRefreshing.set(false);
+      }
+    });
+  }
+
+  recomputeEvaluation(): void {
+    const evalData = this.evaluationService.computeClientEvaluation(
+      this.selectedSymbol(),
+      this.selectedExchange(),
+      this.cashflowResponse(),
+      this.quartersResponse(),
+      this.shareholdingResponse(),
+      this.assetsResponse()
+    );
+    this.evaluationResponse.set(evalData);
+  }
+
+  getEvaluation(): StockHealthScoreResponse {
+    const existing = this.evaluationResponse();
+    if (existing && existing.symbol === this.selectedSymbol().toUpperCase()) {
+      return existing;
+    }
+    return this.evaluationService.computeClientEvaluation(
+      this.selectedSymbol(),
+      this.selectedExchange(),
+      this.cashflowResponse(),
+      this.quartersResponse(),
+      this.shareholdingResponse(),
+      this.assetsResponse()
+    );
+  }
+
+  openEvaluationModal(): void {
+    this.isEvaluationModalOpen.set(true);
+  }
+
+  closeEvaluationModal(): void {
+    this.isEvaluationModalOpen.set(false);
   }
 
   syncAllData(): void {
@@ -464,9 +533,16 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     return '₹' + val.toLocaleString('en-IN', { maximumFractionDigits: 0 }) + ' Cr.';
   }
 
+  getValueColorClass(val?: number | null): string {
+    if (val === null || val === undefined || isNaN(val)) return '';
+    return val < 0 ? 'text-red' : 'text-green';
+  }
+
   formatCrores(val?: number | null): string {
     if (val === null || val === undefined || isNaN(val)) return '—';
-    return '₹' + Math.round(val).toLocaleString('en-IN') + ' Cr.';
+    const isNeg = val < 0;
+    const absVal = Math.abs(val);
+    return (isNeg ? '-₹' : '₹') + Math.round(absVal).toLocaleString('en-IN') + ' Cr.';
   }
 
   formatRatio(val?: number | null): string {
