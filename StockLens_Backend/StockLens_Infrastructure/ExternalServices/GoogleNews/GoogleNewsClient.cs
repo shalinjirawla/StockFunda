@@ -32,7 +32,8 @@ namespace StockLens_Infrastructure.ExternalServices.GoogleNews
 
             try
             {
-                var query = Uri.EscapeDataString($"{symbol} share price");
+                //var query = Uri.EscapeDataString($"{symbol} share price");
+                var query = Uri.EscapeDataString($"{symbol} {companyName}");
                 var rssUrl = $"https://news.google.com/rss/search?q={query}&hl=en-IN&gl=IN&ceid=IN:en";
 
                 _logger.LogInformation("Fetching Google News RSS for {Symbol}: {Url}", symbol, rssUrl);

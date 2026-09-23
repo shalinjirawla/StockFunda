@@ -736,7 +736,7 @@
                   <span class="quad-value">{{ cashflowResponse()?.ratios?.debtorDays != null ?
                     cashflowResponse()?.ratios?.debtorDays + ' Days' : '—' }}</span>
                   @if (cashflowResponse()?.ratios?.debtorDaysYoY; as g) {
-                  <span class="delta-tag" [ngClass]="getChangeClass(g)">
+                  <span class="delta-tag" [ngClass]="getInvertedChangeClass(g)">
                     {{ getArrow(g) }} {{ formatPercent(g) }}
                   </span>
                   }
@@ -752,7 +752,7 @@
                   <span class="quad-value">{{ cashflowResponse()?.ratios?.inventoryDays != null ?
                     cashflowResponse()?.ratios?.inventoryDays + ' Days' : '—' }}</span>
                   @if (cashflowResponse()?.ratios?.inventoryDaysYoY; as g) {
-                  <span class="delta-tag" [ngClass]="getChangeClass(g)">
+                  <span class="delta-tag" [ngClass]="getInvertedChangeClass(g)">
                     {{ getArrow(g) }} {{ formatPercent(g) }}
                   </span>
                   }

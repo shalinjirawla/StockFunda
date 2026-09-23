@@ -527,6 +527,11 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     return val > 0 ? 'positive' : 'negative';
   }
 
+  getInvertedChangeClass(val?: number | null): string {
+    if (val === null || val === undefined || val === 0) return 'neutral';
+    return val > 0 ? 'negative' : 'positive';
+  }
+
   // Formatters
   formatCurrency(val?: number | null): string {
     if (val === null || val === undefined || isNaN(val)) return '—';
