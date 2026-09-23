@@ -92,6 +92,40 @@
     </div>
 
     <div class="stock-header-right">
+      @if (evaluationResponse(); as eval) {
+      <button type="button" class="verdict-header-btn" (click)="openEvaluationModal()"
+        [style.border-color]="eval.signalClass === 'badge-success' ? 'rgba(16, 185, 129, 0.4)' : eval.signalClass === 'badge-good' ? 'rgba(56, 189, 248, 0.4)' : eval.signalClass === 'badge-warning' ? 'rgba(245, 158, 11, 0.4)' : 'rgba(239, 68, 68, 0.4)'">
+        <div class="verdict-dot"
+          [style.background-color]="eval.signalClass === 'badge-success' ? '#10b981' : eval.signalClass === 'badge-good' ? '#38bdf8' : eval.signalClass === 'badge-warning' ? '#f59e0b' : '#ef4444'">
+        </div>
+        <div class="verdict-info">
+          <span class="verdict-lbl">VERDICT</span>
+          <span class="verdict-val"
+            [style.color]="eval.signalClass === 'badge-success' ? '#34d399' : eval.signalClass === 'badge-good' ? '#38bdf8' : eval.signalClass === 'badge-warning' ? '#fbbf24' : '#f87171'">{{
+            eval.signal }}</span>
+        </div>
+        <div class="verdict-score-box">
+          <span class="v-score">{{ eval.totalScore }}</span>
+          <span class="v-max">/100</span>
+        </div>
+        <svg class="v-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M9 18l6-6-6-6"></path>
+        </svg>
+      </button>
+      } @else {
+      <button type="button" class="verdict-header-btn" (click)="openEvaluationModal()"
+        style="border-color: rgba(56, 189, 248, 0.4);">
+        <div class="verdict-dot" style="background-color: #38bdf8;"></div>
+        <div class="verdict-info">
+          <span class="verdict-lbl">VERDICT</span>
+          <span class="verdict-val" style="color: #38bdf8;">AI Scorecard</span>
+        </div>
+        <svg class="v-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M9 18l6-6-6-6"></path>
+        </svg>
+      </button>
+      }
+
       <div class="price-box">
         <span class="live-indicator-dot"></span>
         <span class="price-label">LIVE PRICE</span>
@@ -121,6 +155,7 @@
           <span class="stat-mini-val">{{ formatAsOfDate(asOf) }}</span>
         </div>
         }
+
       </div>
     </div>
   </div>
@@ -813,4 +848,139 @@
       </div>
     </div>
   </div>
+
+  <!-- EVALUATION SCORECARD MODAL DIALOG -->
+  @if (isEvaluationModalOpen() && evaluationResponse(); as eval) {
+  <div class="eval-modal-backdrop" (click)="closeEvaluationModal()">
+    <div class="eval-modal-dialog" (click)="$event.stopPropagation()">
+      <div class="eval-modal-header">
+        <div class="eval-header-title-box">
+          <div class="eval-avatar">{{ eval.symbol.substring(0, 2) }}</div>
+          <div class="eval-title-meta">
+            <div class="eval-title-row">
+              <h2 class="eval-company-name">{{ eval.companyName }}</h2>
+              <span class="eval-symbol-badge">{{ eval.symbol }}</span>
+              <span class="eval-exchange-badge">{{ eval.exchange }}</span>
+            </div>
+            <span class="eval-subtitle">23-Metric Comprehensive Stock Purchase Scoring Model</span>
+          </div>
+        </div>
+        <div class="eval-header-actions">
+          <div class="eval-hero-pill {{ eval.signalClass }}">
+            <span class="pill-dot"></span>
+            {{ eval.signal | uppercase }}
+          </div>
+          <button type="button" class="eval-close-btn" (click)="closeEvaluationModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 6L6 18M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="eval-modal-body">
+        <!-- Hero Score Banner -->
+        <div class="eval-score-banner {{ eval.signalClass }}">
+          <div class="score-circle-box">
+            <div class="score-radial-wrap">
+              <span class="radial-number">{{ eval.totalScore }}</span>
+              <span class="radial-sub">/ 100</span>
+            </div>
+          </div>
+          <div class="score-text-content">
+            <div class="score-verdict-title-row">
+              <span class="score-verdict-label">INVESTMENT VERDICT:</span>
+              <span class="score-verdict-highlight">{{ eval.signal }}</span>
+            </div>
+            <p class="score-summary-desc">{{ eval.summaryText }}</p>
+            <div class="score-badges-row">
+              <span class="score-micro-tag"><span class="dot-green"></span> {{ eval.pros.length }} Strengths
+                Found</span>
+              <span class="score-micro-tag"><span class="dot-amber"></span> {{ eval.cons.length }} Risks
+                Monitored</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Red Flags -->
+        @if (eval.redFlags && eval.redFlags.length > 0) {
+        <div class="eval-red-flag-alert" style="margin-top: 1rem;">
+          <svg class="alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          <div>
+            <span class="alert-title">CRITICAL RED FLAGS IDENTIFIED</span>
+            <ul class="alert-list">
+              @for (flag of eval.redFlags; track flag) {
+              <li>{{ flag }}</li>
+              }
+            </ul>
+          </div>
+        </div>
+        }
+
+        <!-- Pros & Cons Split List -->
+        <div class="eval-pros-cons-grid" style="margin-top: 1.25rem;">
+          <div class="pros-box">
+            <div class="pros-cons-header" style="color: #34d399;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              KEY STRENGTHS (PROS)
+            </div>
+            <ul class="pros-cons-list">
+              @for (pro of eval.pros; track pro) {
+              <li class="pro-item">
+                <svg class="bullet-pro" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
+                  style="width:14px;height:14px;margin-top:2px;">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span>{{ pro }}</span>
+              </li>
+              }
+              @if (eval.pros.length === 0) {
+              <span class="empty-msg">No key strengths identified.</span>
+              }
+            </ul>
+          </div>
+
+          <div class="cons-box">
+            <div class="pros-cons-header" style="color: #fbbf24;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+              KEY RISKS & CONCERNS (CONS)
+            </div>
+            <ul class="pros-cons-list">
+              @for (con of eval.cons; track con) {
+              <li class="con-item">
+                <svg class="bullet-con" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
+                  style="width:14px;height:14px;margin-top:2px;">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z">
+                  </path>
+                  <line x1="12" y1="9" x2="12" y2="13"></line>
+                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+                <span>{{ con }}</span>
+              </li>
+              }
+              @if (eval.cons.length === 0) {
+              <span class="empty-msg">No major concerns identified.</span>
+              }
+            </ul>
+          </div>
+        </div>
+
+      </div>
+      <div class="eval-modal-footer">
+        <span class="eval-disclaimer">* Algorithmic assessment based on 23 financial and technical indicators. For
+          informational & research purposes only.</span>
+        <button class="eval-done-btn" (click)="closeEvaluationModal()">Close Scorecard</button>
+      </div>
+    </div>
+  </div>
+  }
 </div>

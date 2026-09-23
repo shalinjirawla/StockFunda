@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using StockLens_BusinessLayer.DTOs;
 using StockLens_BusinessLayer.Interfaces;
 using StockLens_BusinessLayer.Models;
+using StockLens_Infrastructure.ExternalServices.BharatStock;
 
 namespace StockLens_BusinessLayer.Services
 {
@@ -16,19 +17,22 @@ namespace StockLens_BusinessLayer.Services
         private readonly IStockShareholdingService _shareholdingService;
         private readonly IStockBalanceSheetService _balanceSheetService;
         private readonly IStockPriceHistoryService _priceHistoryService;
+        private readonly IFinancialProvider _financialProvider;
 
         public StockEvaluationService(
             IStockCashflowService cashflowService,
             IStockQuarterlyResultsService quartersService,
             IStockShareholdingService shareholdingService,
             IStockBalanceSheetService balanceSheetService,
-            IStockPriceHistoryService priceHistoryService)
+            IStockPriceHistoryService priceHistoryService,
+            IFinancialProvider financialProvider)
         {
             _cashflowService = cashflowService;
             _quartersService = quartersService;
             _shareholdingService = shareholdingService;
             _balanceSheetService = balanceSheetService;
             _priceHistoryService = priceHistoryService;
+            _financialProvider = financialProvider;
         }
 
         public async Task<StockHealthScoreDto> EvaluateStockAsync(
@@ -82,7 +86,7 @@ namespace StockLens_BusinessLayer.Services
             result.SolvencyScore = sScore;
 
             // 4. Growth & Technical Momentum (Max: 15 Points)
-            var gScore = EvaluateGrowthAndMomentum(quartersData, priceHistoryData, pros, cons);
+            var gScore = EvaluateGrowthAndMomentum(quartersData, priceHistoryData, pros, cons, redFlags);
             result.GrowthScore = gScore;
 
             // 5. Smart Money & Ownership (Max: 15 Points)
@@ -134,6 +138,8 @@ namespace StockLens_BusinessLayer.Services
                 result.SummaryText = "Elevated risk profile due to weak cash flow, excessive leverage, or negative earnings momentum.";
             }
 
+
+
             return result;
         }
 
@@ -152,22 +158,30 @@ namespace StockLens_BusinessLayer.Services
             var summary = cashflow?.Summary;
 
             // ROCE & ROE (8 pts)
-            var roe = ratios?.Roe ?? 0;
-            var roce = ratios?.Roce ?? 0;
-            if (roce >= 15 && roe >= 15)
+            if (ratios != null && ratios.Roe.HasValue && ratios.Roce.HasValue)
             {
-                points += 8;
-                pros.Add($"High Capital Compounding: ROE ({roe:F1}%) & ROCE ({roce:F1}%) > 15%");
-                category.Highlights.Add("High ROE & ROCE (>15%)");
-            }
-            else if (roce >= 10 && roe >= 10)
-            {
-                points += 4;
-                category.Highlights.Add("Moderate ROE & ROCE (10-15%)");
+                var roe = ratios.Roe.Value;
+                var roce = ratios.Roce.Value;
+                if (roce >= 15 && roe >= 15)
+                {
+                    points += 8;
+                    pros.Add($"High Capital Compounding: ROE ({roe:F1}%) & ROCE ({roce:F1}%) > 15%");
+                    category.Highlights.Add("High ROE & ROCE (>15%)");
+                }
+                else if (roce >= 10 && roe >= 10)
+                {
+                    points += 4;
+                    category.Highlights.Add("Moderate ROE & ROCE (10-15%)");
+                }
+                else
+                {
+                    cons.Add($"Low ROE ({roe:F1}%) / ROCE ({roce:F1}%) underperforming capital efficiency benchmark");
+                }
             }
             else
             {
-                cons.Add($"Low ROE ({roe:F1}%) / ROCE ({roce:F1}%) underperforming capital efficiency benchmark");
+                points += 4; // Neutral points for missing data
+                category.Highlights.Add("ROE/ROCE Data Unavailable");
             }
 
             // Free Cash Flow (7 pts)
@@ -306,12 +320,33 @@ namespace StockLens_BusinessLayer.Services
             var op = quarters?.Summary?.OperatingProfit ?? cashflow?.Summary?.OperatingProfit ?? 0;
             var interest = quarters?.Summary?.Interest ?? cashflow?.Summary?.Interest ?? 0;
 
-            // Interest Coverage Ratio (8 pts)
-            if (interest <= 0)
+            // Borrowings check from Balance Sheet to validate "Debt-Free" status
+            var borrowingsRow = balanceSheet?.LineItems?.FirstOrDefault(l =>
+                l.Name.IndexOf("Borrowing", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                l.Name.IndexOf("Debt", StringComparison.OrdinalIgnoreCase) >= 0);
+            
+            var latestBorrowings = 0m;
+            if (borrowingsRow != null && borrowingsRow.Values.Count > 0)
             {
-                points += 8; // Virtual zero debt
-                pros.Add("Virtually debt-free (Zero or negligible interest expense)");
+                var nonNullVals = borrowingsRow.Values.Where(v => v.HasValue).Select(v => v!.Value).ToList();
+                if (nonNullVals.Count > 0)
+                {
+                    latestBorrowings = nonNullVals[^1];
+                }
+            }
+
+            // Interest Coverage Ratio (8 pts)
+            if (interest <= 0 && latestBorrowings <= 0)
+            {
+                points += 8; // True zero debt
+                pros.Add("Virtually debt-free (Zero debt on balance sheet)");
                 category.Highlights.Add("Negligible Interest Expense");
+            }
+            else if (interest <= 0 && latestBorrowings > 0)
+            {
+                // API missing interest data, but debt exists. Neutral points to avoid fake positive.
+                points += 4;
+                category.Highlights.Add("Interest Data Unavailable");
             }
             else
             {
@@ -335,9 +370,6 @@ namespace StockLens_BusinessLayer.Services
             }
 
             // Borrowings trend in Balance Sheet (7 pts)
-            var borrowingsRow = balanceSheet?.LineItems?.FirstOrDefault(l =>
-                l.Name.IndexOf("Borrowing", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                l.Name.IndexOf("Debt", StringComparison.OrdinalIgnoreCase) >= 0);
 
             if (borrowingsRow != null && borrowingsRow.Values.Count >= 2)
             {
@@ -385,7 +417,8 @@ namespace StockLens_BusinessLayer.Services
             StockQuarterlyResultsResponseDto? quarters,
             PriceHistoryResponseDto? priceHistory,
             List<string> pros,
-            List<string> cons)
+            List<string> cons,
+            List<string> redFlags)
         {
             var category = new CategoryScoreDto
             {
@@ -414,6 +447,12 @@ namespace StockLens_BusinessLayer.Services
                 else if (profitGrowth.Value < -10)
                 {
                     cons.Add($"Quarterly Profit contraction: Net profit fell {profitGrowth.Value:F1}% YoY");
+                }
+                
+                // Revenue-Profit Mismatch Red Flag
+                if (salesGrowth.Value > 15 && profitGrowth.Value < -10)
+                {
+                    redFlags.Add($"Revenue-Profit Mismatch: Sales grew {salesGrowth.Value:F1}% but Profits crashed {profitGrowth.Value:F1}% (Margin crush)");
                 }
             }
             else

@@ -8,7 +8,7 @@ using StockLens_Infrastructure.ExternalServices.IndianApi;
 using StockLens_BusinessLayer.MapperProfile;
 using StockLens_Infrastructure.Repositories;
 using StockLens_Infrastructure.Seeders;
-
+using System.Net;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -85,6 +85,13 @@ builder.Services.AddHttpClient<StockLens_Infrastructure.ExternalServices.YahooFi
     client.Timeout = TimeSpan.FromSeconds(10);
 });
 
+// Register OpenAI (Gemini) API HTTP Client (For Live Search)
+builder.Services.AddHttpClient<StockLens_Infrastructure.ExternalServices.OpenApi.IOpenApiClient, StockLens_Infrastructure.ExternalServices.OpenApi.OpenApiClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
+
 // Register Repositories
 builder.Services.AddScoped<IStockRepository, StockRepository>();
 builder.Services.AddScoped<IStockNewsRepository, StockNewsRepository>();
@@ -106,7 +113,8 @@ builder.Services.AddScoped<IStockCashflowService, StockCashflowService>();
 builder.Services.AddScoped<IStockBalanceSheetService, StockBalanceSheetService>();
 builder.Services.AddScoped<IStockPriceHistoryService, StockPriceHistoryService>();
 builder.Services.AddScoped<IStockQuarterlyResultsService, StockQuarterlyResultsService>();
-builder.Services.AddScoped<IStockOrderBookService, StockOrderBookService>();
+builder.Services.AddScoped<IStockEvaluationService, StockEvaluationService>();
+
 
 // Register AutoMapper
 builder.Services.AddAutoMapper(cfg => cfg.AddProfile<MapperProfile>());

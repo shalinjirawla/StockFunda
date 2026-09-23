@@ -195,6 +195,14 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
     this.selectedExchange.set(cleanExchange);
     this.searchQuery.set('');
     this.searchResults.set([]);
+    // Clear previous state before fetching new
+    this.cashflowResponse.set(null);
+    this.quartersResponse.set(null);
+    this.assetsResponse.set(null);
+    this.shareholdingResponse.set(null);
+    this.evaluationResponse.set(null);
+    this.newsResponse.set(null);
+
     this.fetchAllData(false);
     this.startLivePricePolling();
   }
