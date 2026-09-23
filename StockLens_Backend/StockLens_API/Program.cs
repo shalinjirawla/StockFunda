@@ -6,6 +6,7 @@ using StockLens_Infrastructure.DataContext;
 using StockLens_Infrastructure.ExternalServices.BharatStock;
 using StockLens_Infrastructure.ExternalServices.IndianApi;
 using StockLens_BusinessLayer.MapperProfile;
+using StockLens_Infrastructure.ExternalServices.GoogleNews;
 using StockLens_Infrastructure.Repositories;
 using StockLens_Infrastructure.Seeders;
 using System.Net;
@@ -85,12 +86,11 @@ builder.Services.AddHttpClient<StockLens_Infrastructure.ExternalServices.YahooFi
     client.Timeout = TimeSpan.FromSeconds(10);
 });
 
-// Register OpenAI (Gemini) API HTTP Client (For Live Search)
-builder.Services.AddHttpClient<StockLens_Infrastructure.ExternalServices.OpenApi.IOpenApiClient, StockLens_Infrastructure.ExternalServices.OpenApi.OpenApiClient>(client =>
+// Register Google News HTTP Client
+builder.Services.AddHttpClient<IGoogleNewsClient, GoogleNewsClient>(client =>
 {
-    client.Timeout = TimeSpan.FromSeconds(30);
+    client.Timeout = TimeSpan.FromSeconds(15);
 });
-
 
 // Register Repositories
 builder.Services.AddScoped<IStockRepository, StockRepository>();

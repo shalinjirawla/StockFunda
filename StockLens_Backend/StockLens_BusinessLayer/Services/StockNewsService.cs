@@ -5,6 +5,7 @@ using StockLens_BusinessLayer.DTOs;
 using StockLens_BusinessLayer.Interfaces;
 using StockLens_DataLayer.Entities;
 using StockLens_DataLayer.Interfaces;
+using StockLens_Infrastructure.ExternalServices.GoogleNews;
 using StockLens_Infrastructure.ExternalServices.IndianApi;
 using StockLens_Infrastructure.ExternalServices.IndianApi.Models;
 using StockLens_Infrastructure.ExternalServices.YahooFinanceApi;
@@ -21,6 +22,7 @@ namespace StockLens_BusinessLayer.Services
         private readonly IStockRepository _stockRepository;
         private readonly IStockNewsRepository _newsRepository;
         private readonly IIndianApiNewsClient _indianApiClient;
+        private readonly IGoogleNewsClient _googleNewsClient;
         private readonly IMapper _mapper;
         private readonly IndianApiSettings _settings;
         private readonly ILogger<StockNewsService> _logger;
@@ -31,6 +33,7 @@ namespace StockLens_BusinessLayer.Services
             IStockRepository stockRepository,
             IStockNewsRepository newsRepository,
             IIndianApiNewsClient indianApiClient,
+            IGoogleNewsClient googleNewsClient,
             IMapper mapper,
             IOptions<IndianApiSettings> settings,
             ILogger<StockNewsService> logger,
@@ -40,6 +43,7 @@ namespace StockLens_BusinessLayer.Services
             _stockRepository = stockRepository;
             _newsRepository = newsRepository;
             _indianApiClient = indianApiClient;
+            _googleNewsClient = googleNewsClient;
             _mapper = mapper;
             _settings = settings.Value;
             _logger = logger;
@@ -125,6 +129,17 @@ namespace StockLens_BusinessLayer.Services
             var newsEntities = await _newsRepository.GetNewsByStockIdAsync(stock.Id, limit, page);
             var newsDtos = _mapper.Map<List<StockNewsItemDto>>(newsEntities);
 
+            // Restore the full URL (which is stored in Content to avoid DB limits)
+            foreach (var dto in newsDtos)
+            {
+                var entity = newsEntities.FirstOrDefault(e => e.Id == dto.Id);
+                if (entity != null && !string.IsNullOrWhiteSpace(entity.Content))
+                {
+                    dto.SourceUrl = entity.Content;
+                    dto.ArticleUrl = entity.Content;
+                }
+            }
+
             return new StockNewsResponseDto
             {
                 StockId = stock.Id,
@@ -142,7 +157,10 @@ namespace StockLens_BusinessLayer.Services
         {
             try
             {
-                var articles = await _indianApiClient.GetStockNewsAsync(stock.Symbol, stock.Company?.CompanyName, cancellationToken);
+                // Commented out IndianAPI call as per user request to use Google News
+                // var articles = await _indianApiClient.GetStockNewsAsync(stock.Symbol, stock.Company?.CompanyName, cancellationToken);
+                
+                var articles = await _googleNewsClient.GetStockNewsAsync(stock.Symbol, stock.Company?.CompanyName, cancellationToken);
 
                 if (articles == null || articles.Count == 0)
                 {
@@ -202,6 +220,9 @@ namespace StockLens_BusinessLayer.Services
                 {
                     _logger.LogInformation("Saving {Count} new stock news articles for {Symbol} (StockId: {StockId}).", newEntities.Count, stock.Symbol, stock.Id);
                     await _newsRepository.AddRangeAsync(newEntities);
+                    await _newsRepository.SaveChangesAsync();
+
+                    await _newsRepository.DeleteOldNewsAsync(stock.Id, 5);
                     await _newsRepository.SaveChangesAsync();
                 }
                 else

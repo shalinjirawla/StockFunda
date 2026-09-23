@@ -12,6 +12,7 @@ namespace StockLens_DataLayer.Interfaces
         Task<HashSet<string>> GetExistingExternalNewsIdsAsync(int stockId, IEnumerable<string> externalNewsIds);
         Task<HashSet<string>> GetExistingSourceUrlsAsync(int stockId, IEnumerable<string> sourceUrls);
         Task AddRangeAsync(IEnumerable<StockNews> newsItems);
+        Task DeleteOldNewsAsync(int stockId, int keepCount);
         Task<int> SaveChangesAsync();
     }
 }

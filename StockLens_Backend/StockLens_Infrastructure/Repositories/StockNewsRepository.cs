@@ -76,6 +76,21 @@ namespace StockLens_Infrastructure.Repositories
             await _context.StockNews.AddRangeAsync(newsItems);
         }
 
+        public async Task DeleteOldNewsAsync(int stockId, int keepCount)
+        {
+            // DB mein strictly `keepCount` (e.g. 5) items hi rakhne ke liye baki sab delete karo
+            var oldNews = await _context.StockNews
+                .Where(sn => sn.StockId == stockId)
+                .OrderByDescending(sn => sn.PublishedAt)
+                .Skip(keepCount)
+                .ToListAsync();
+
+            if (oldNews.Any())
+            {
+                _context.StockNews.RemoveRange(oldNews);
+            }
+        }
+
         public async Task<int> SaveChangesAsync()
         {
             return await _context.SaveChangesAsync();
