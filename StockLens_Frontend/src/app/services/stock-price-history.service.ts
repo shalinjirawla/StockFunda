@@ -7,6 +7,9 @@ export interface PriceHistoryResponseDto {
   symbol: string;
   errorMessage?: string;
   dates: string[];
+  opens?: number[];
+  highs?: number[];
+  lows?: number[];
   closePrices: number[];
   volumes: number[];
   source?: string;

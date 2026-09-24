@@ -90,7 +90,29 @@ namespace StockLens_Infrastructure.ExternalServices.YahooFinanceApi
                 var endpoint = $"/v8/finance/chart/{Uri.EscapeDataString(searchSymbol)}?range=5y&interval=1d";
                 _logger.LogInformation("Fetching historical price chart from Yahoo Finance API for {Symbol}", searchSymbol);
 
-                var response = await _httpClient.GetAsync(endpoint, cancellationToken);
+                using var req = new HttpRequestMessage(HttpMethod.Get, endpoint);
+                if (!string.IsNullOrWhiteSpace(_cachedCookie))
+                {
+                    req.Headers.Add("Cookie", _cachedCookie);
+                }
+
+                var response = await _httpClient.SendAsync(req, cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    // Retry with crumb if initial request fails
+                    await EnsureCrumbAsync(cancellationToken);
+                    var retryEndpoint = !string.IsNullOrWhiteSpace(_cachedCrumb)
+                        ? $"{endpoint}&crumb={Uri.EscapeDataString(_cachedCrumb)}"
+                        : endpoint;
+
+                    using var retryReq = new HttpRequestMessage(HttpMethod.Get, retryEndpoint);
+                    if (!string.IsNullOrWhiteSpace(_cachedCookie))
+                    {
+                        retryReq.Headers.Add("Cookie", _cachedCookie);
+                    }
+                    response = await _httpClient.SendAsync(retryReq, cancellationToken);
+                }
+
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Yahoo Finance Chart API returned status code {StatusCode} for {Symbol}", response.StatusCode, searchSymbol);
@@ -133,13 +155,18 @@ namespace StockLens_Infrastructure.ExternalServices.YahooFinanceApi
 
                             if (close.HasValue && close.Value > 0)
                             {
+                                var c = Math.Round(close.Value, 2);
+                                var o = (open.HasValue && open.Value > 0) ? Math.Round(open.Value, 2) : c;
+                                var h = (high.HasValue && high.Value > 0) ? Math.Round(Math.Max(high.Value, Math.Max(o, c)), 2) : Math.Max(o, c);
+                                var l = (low.HasValue && low.Value > 0) ? Math.Round(Math.Min(low.Value, Math.Min(o, c)), 2) : Math.Min(o, c);
+
                                 records.Add(new StockLens_Infrastructure.ExternalServices.IndianApi.Models.IndianApiPriceRecord
                                 {
                                     DateString = date.ToString("yyyy-MM-dd"),
-                                    Open = open ?? close.Value,
-                                    High = high ?? close.Value,
-                                    Low = low ?? close.Value,
-                                    Close = close.Value,
+                                    Open = o,
+                                    High = h,
+                                    Low = l,
+                                    Close = c,
                                     Volume = vol ?? 0
                                 });
                             }
@@ -380,11 +407,17 @@ namespace StockLens_Infrastructure.ExternalServices.YahooFinanceApi
                                 period.Depreciation = Math.Round(Math.Abs(dep) / croreDivisor, 2);
 
                             // Profit Before Tax
-                            if (ExtractRawDecimal(stmt, "incomeBeforeTax", out var pbt))
+                            if (ExtractRawDecimal(stmt, "incomeBeforeTax", out var pbt) ||
+                                ExtractRawDecimal(stmt, "pretaxIncome", out pbt) ||
+                                ExtractRawDecimal(stmt, "profitBeforeTax", out pbt))
                                 period.ProfitBeforeTax = Math.Round(pbt / croreDivisor, 2);
 
                             // Tax Expense
-                            if (ExtractRawDecimal(stmt, "incomeTaxExpense", out var tax))
+                            if (ExtractRawDecimal(stmt, "incomeTaxExpense", out var tax) ||
+                                ExtractRawDecimal(stmt, "taxProvision", out tax) ||
+                                ExtractRawDecimal(stmt, "taxExpense", out tax) ||
+                                ExtractRawDecimal(stmt, "incomeTax", out tax) ||
+                                ExtractRawDecimal(stmt, "taxEffectOfUnusualItems", out tax))
                                 period.Tax = Math.Round(Math.Abs(tax) / croreDivisor, 2);
 
                             // Net Profit / Net Income
@@ -392,6 +425,8 @@ namespace StockLens_Infrastructure.ExternalServices.YahooFinanceApi
                                 period.NetProfit = Math.Round(np / croreDivisor, 2);
                             else if (ExtractRawDecimal(stmt, "netIncomeFromContinuingOperations", out var npCont))
                                 period.NetProfit = Math.Round(npCont / croreDivisor, 2);
+                            else if (ExtractRawDecimal(stmt, "netIncomeCommonStockholders", out var npStock))
+                                period.NetProfit = Math.Round(npStock / croreDivisor, 2);
 
                             // EPS
                             if (ExtractRawDecimal(stmt, "dilutedEPS", out var eps) ||
@@ -413,6 +448,16 @@ namespace StockLens_Infrastructure.ExternalServices.YahooFinanceApi
                                 if (period.Revenue.Value > 0)
                                 {
                                     period.OperatingProfitMargin = Math.Round((period.OperatingProfit.Value / period.Revenue.Value) * 100m, 2);
+                                }
+                            }
+
+                            // Fallback Tax calculations
+                            if (!period.Tax.HasValue && period.ProfitBeforeTax.HasValue && period.NetProfit.HasValue)
+                            {
+                                var computedTax = period.ProfitBeforeTax.Value - period.NetProfit.Value;
+                                if (computedTax >= 0)
+                                {
+                                    period.Tax = Math.Round(computedTax, 2);
                                 }
                             }
 

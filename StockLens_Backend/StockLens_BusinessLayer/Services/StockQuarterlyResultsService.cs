@@ -95,12 +95,42 @@ namespace StockLens_BusinessLayer.Services
                               existingQuarters.All(q => (DateTime.UtcNow - q.LastSyncedAt).TotalHours > 24) ||
                               existingQuarters.Any(q => q.Depreciation == null && q.Revenue.HasValue) ||
                               existingQuarters.Any(q => q.Interest == null && q.Revenue.HasValue) ||
+                              existingQuarters.Any(q => q.Tax == null && (q.ProfitBeforeTax.HasValue || q.Revenue.HasValue)) ||
                               existingQuarters.GroupBy(q => q.PeriodEndDate.HasValue ? q.PeriodEndDate.Value.ToString("yyyy-MM") : q.FiscalYear).Any(g => g.Count() > 1);
 
                 if (forceRefresh || isStale)
                 {
                     await SyncQuarterlyResultsAsync(stock, cancellationToken);
                     existingQuarters = await _financialRepository.GetFinancialsByStockIdAsync(stock.Id, "quarterly", limit: 12);
+                }
+
+                // If any existing records in DB still have Tax == null, calculate and persist it to DB
+                var needsDbSave = false;
+                foreach (var q in existingQuarters)
+                {
+                    if (!q.Tax.HasValue && q.ProfitBeforeTax.HasValue && q.NetProfit.HasValue)
+                    {
+                        var comp = q.ProfitBeforeTax.Value - q.NetProfit.Value;
+                        if (comp >= 0)
+                        {
+                            q.Tax = Math.Round(comp, 2);
+                            needsDbSave = true;
+                        }
+                    }
+                    if (!q.TaxPercentage.HasValue && q.Tax.HasValue && q.ProfitBeforeTax.HasValue && q.ProfitBeforeTax.Value > 0)
+                    {
+                        q.TaxPercentage = Math.Round((q.Tax.Value / q.ProfitBeforeTax.Value) * 100m, 2);
+                        needsDbSave = true;
+                    }
+                    if (needsDbSave)
+                    {
+                        q.UpdatedAt = DateTime.UtcNow;
+                        await _financialRepository.UpdateAsync(q);
+                    }
+                }
+                if (needsDbSave)
+                {
+                    await _financialRepository.SaveChangesAsync();
                 }
 
                 return BuildResponseDto(stock, existingQuarters);
@@ -177,6 +207,20 @@ namespace StockLens_BusinessLayer.Services
 
         private async Task UpsertQuarterlyRecordAsync(int stockId, IndianApiFinancialPeriodDto dto, string source)
         {
+            // Ensure Tax and TaxPercentage are computed on dto if missing
+            if (!dto.Tax.HasValue && dto.ProfitBeforeTax.HasValue && dto.NetProfit.HasValue)
+            {
+                var computedTax = dto.ProfitBeforeTax.Value - dto.NetProfit.Value;
+                if (computedTax >= 0)
+                {
+                    dto.Tax = Math.Round(computedTax, 2);
+                }
+            }
+            if (!dto.TaxPercentage.HasValue && dto.Tax.HasValue && dto.ProfitBeforeTax.HasValue && dto.ProfitBeforeTax.Value > 0)
+            {
+                dto.TaxPercentage = Math.Round((dto.Tax.Value / dto.ProfitBeforeTax.Value) * 100m, 2);
+            }
+
             var periodKey = ResolveQuarterlyPeriodKey(dto);
             var normalizedPeriod = dto.PeriodEndDate.HasValue
                 ? dto.PeriodEndDate.Value.ToString("MMM yyyy")
@@ -236,6 +280,18 @@ namespace StockLens_BusinessLayer.Services
                 existing.ProfitBeforeTax = dto.ProfitBeforeTax ?? existing.ProfitBeforeTax;
                 existing.Tax = dto.Tax ?? existing.Tax;
                 existing.TaxPercentage = dto.TaxPercentage ?? existing.TaxPercentage;
+                if (!existing.Tax.HasValue && existing.ProfitBeforeTax.HasValue && existing.NetProfit.HasValue)
+                {
+                    var comp = existing.ProfitBeforeTax.Value - existing.NetProfit.Value;
+                    if (comp >= 0)
+                    {
+                        existing.Tax = Math.Round(comp, 2);
+                    }
+                }
+                if (!existing.TaxPercentage.HasValue && existing.Tax.HasValue && existing.ProfitBeforeTax.HasValue && existing.ProfitBeforeTax.Value > 0)
+                {
+                    existing.TaxPercentage = Math.Round((existing.Tax.Value / existing.ProfitBeforeTax.Value) * 100m, 2);
+                }
                 existing.NetProfit = dto.NetProfit ?? existing.NetProfit;
                 existing.Eps = dto.Eps ?? existing.Eps;
                 existing.ConsolidationType = dto.ConsolidationType ?? existing.ConsolidationType;
@@ -309,6 +365,19 @@ namespace StockLens_BusinessLayer.Services
                         mergedDto.TaxPercentage ??= other.TaxPercentage;
                         mergedDto.NetProfit ??= other.NetProfit;
                         mergedDto.Eps ??= other.Eps;
+                    }
+
+                    if (!mergedDto.Tax.HasValue && mergedDto.ProfitBeforeTax.HasValue && mergedDto.NetProfit.HasValue)
+                    {
+                        var comp = mergedDto.ProfitBeforeTax.Value - mergedDto.NetProfit.Value;
+                        if (comp >= 0)
+                        {
+                            mergedDto.Tax = Math.Round(comp, 2);
+                        }
+                    }
+                    if (!mergedDto.TaxPercentage.HasValue && mergedDto.Tax.HasValue && mergedDto.ProfitBeforeTax.HasValue && mergedDto.ProfitBeforeTax.Value > 0)
+                    {
+                        mergedDto.TaxPercentage = Math.Round((mergedDto.Tax.Value / mergedDto.ProfitBeforeTax.Value) * 100m, 2);
                     }
 
                     if (primary.PeriodEndDate.HasValue)

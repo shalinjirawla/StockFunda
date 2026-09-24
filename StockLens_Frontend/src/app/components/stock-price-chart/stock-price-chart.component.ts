@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { HighchartsChartComponent } from 'highcharts-angular';
 import * as Highcharts from 'highcharts';
 import { StockPriceHistoryService, PriceHistoryResponseDto } from '../../services/stock-price-history.service';
+
 @Component({
   selector: 'app-stock-price-chart',
   standalone: true,
@@ -24,9 +25,8 @@ export class StockPriceChartComponent implements OnChanges, OnInit {
   errorMessage = '';
   priceHistory: PriceHistoryResponseDto | null = null;
   updateFlag = false;
-  chart: any; // Reference to the live chart
+  chart: any;
 
-  // Track user's legend selections so they persist across refreshes
   activeSeriesState: { [key: string]: boolean } = {
     'Price': true,
     '50 DMA': true,
@@ -97,8 +97,6 @@ export class StockPriceChartComponent implements OnChanges, OnInit {
   }
 
   private renderChart(data: PriceHistoryResponseDto): void {
-    // ROOT CAUSE FIX: Read the exact visibility state directly from the LIVE chart
-    // before we update the data. This bypasses all legend HTML click bugs!
     if (this.chart && this.chart.series) {
       this.chart.series.forEach((s: any) => {
         if (s.name) {
@@ -107,8 +105,6 @@ export class StockPriceChartComponent implements OnChanges, OnInit {
       });
     }
 
-    // Parse dates and zip with prices for Highcharts
-    // Highcharts expects data as [timestamp, value]
     const priceData = data.dates.map((dateStr, i) => {
       const date = new Date(dateStr).getTime();
       return [date, data.closePrices[i]];
@@ -119,28 +115,27 @@ export class StockPriceChartComponent implements OnChanges, OnInit {
       return [date, data.volumes[i]];
     });
 
-    // Determine axis formatting based on period
-    let tickInterval = 365 * 24 * 3600 * 1000; // 1 year default
+    let tickInterval = 365 * 24 * 3600 * 1000;
     let labelFormat = '{value:%Y}';
-    const p = (this.period || '1yr').toLowerCase();
+    const p = (this.period || '1yr').toLowerCase().trim();
 
     if (p === '1m') {
-      tickInterval = 7 * 24 * 3600 * 1000; // 1 week
+      tickInterval = 7 * 24 * 3600 * 1000;
       labelFormat = '{value:%e %b}';
     } else if (p === '6m') {
-      tickInterval = 30 * 24 * 3600 * 1000; // 1 month
+      tickInterval = 30 * 24 * 3600 * 1000;
       labelFormat = '{value:%e %b}';
-    } else if (p === '1yr') {
-      tickInterval = 3 * 30 * 24 * 3600 * 1000; // 3 months
+    } else if (p === '1yr' || p === '1y') {
+      tickInterval = 3 * 30 * 24 * 3600 * 1000;
       labelFormat = '{value:%b %Y}';
-    } else if (p === '3yr') {
-      tickInterval = 6 * 30 * 24 * 3600 * 1000; // 6 months
+    } else if (p === '3yr' || p === '3y') {
+      tickInterval = 6 * 30 * 24 * 3600 * 1000;
       labelFormat = '{value:%b %Y}';
-    } else if (p === '5yr') {
-      tickInterval = 365 * 24 * 3600 * 1000; // 1 year
+    } else if (p === '5yr' || p === '5y') {
+      tickInterval = 365 * 24 * 3600 * 1000;
       labelFormat = '{value:%b %Y}';
     } else {
-      tickInterval = 2 * 365 * 24 * 3600 * 1000; // 2 years
+      tickInterval = 2 * 365 * 24 * 3600 * 1000;
       labelFormat = '{value:%Y}';
     }
 
@@ -151,7 +146,7 @@ export class StockPriceChartComponent implements OnChanges, OnInit {
         name: 'Price',
         legendIndex: 1,
         data: priceData,
-        color: '#38bdf8', // Light blue (tailwind sky-400)
+        color: '#38bdf8',
         visible: this.activeSeriesState['Price'],
         yAxis: 0
       },
@@ -161,7 +156,7 @@ export class StockPriceChartComponent implements OnChanges, OnInit {
         name: 'Volume',
         legendIndex: 4,
         data: volumeData,
-        color: 'rgba(148, 163, 184, 0.4)', // Slate-400 with opacity
+        color: 'rgba(148, 163, 184, 0.4)',
         visible: this.activeSeriesState['Volume'],
         yAxis: 1
       }
@@ -174,7 +169,7 @@ export class StockPriceChartComponent implements OnChanges, OnInit {
         name: '50 DMA',
         legendIndex: 2,
         data: data.dates.map((dateStr, i) => [new Date(dateStr).getTime(), data.dma50![i]]),
-        color: '#f97316', // Orange-500
+        color: '#f97316',
         visible: this.activeSeriesState['50 DMA'],
         yAxis: 0,
         lineWidth: 1.5,
@@ -190,7 +185,7 @@ export class StockPriceChartComponent implements OnChanges, OnInit {
         name: '200 DMA',
         legendIndex: 3,
         data: data.dates.map((dateStr, i) => [new Date(dateStr).getTime(), data.dma200![i]]),
-        color: '#a855f7', // Purple-500
+        color: '#a855f7',
         visible: this.activeSeriesState['200 DMA'],
         yAxis: 0,
         lineWidth: 1.5,
@@ -203,17 +198,17 @@ export class StockPriceChartComponent implements OnChanges, OnInit {
       chart: {
         backgroundColor: 'transparent',
         style: { fontFamily: 'Inter, sans-serif' },
-        marginRight: 55, // Space for right Y axis labels
-        marginLeft: 45,  // Space for left Y axis labels
+        marginRight: 55,
+        marginLeft: 45,
         marginTop: 10,
-        marginBottom: 44, // Generous clearance for bottom X-axis dates across all zoom levels
+        marginBottom: 44,
         spacing: [4, 4, 12, 4]
       },
       title: {
         text: ''
       },
       legend: {
-        enabled: false // Checkboxes are placed in the card header
+        enabled: false
       },
       credits: {
         enabled: false
@@ -232,7 +227,6 @@ export class StockPriceChartComponent implements OnChanges, OnInit {
       },
       yAxis: [
         {
-          // Primary yAxis for Prices (Right Side)
           opposite: true,
           title: { text: '' },
           tickInterval: 100,
@@ -245,7 +239,6 @@ export class StockPriceChartComponent implements OnChanges, OnInit {
           }
         },
         {
-          // Secondary yAxis for Volumes (Left Side)
           opposite: false,
           title: { text: '' },
           gridLineWidth: 0,

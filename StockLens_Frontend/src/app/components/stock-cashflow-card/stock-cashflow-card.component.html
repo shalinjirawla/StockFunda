@@ -104,7 +104,13 @@
         </div>
 
         <div class="card-value-row">
-          <span class="holding-value fcf-value">{{ formatCurrency(current.freeCashFlow) }}</span>
+          @if (current.freeCashFlow !== null && current.freeCashFlow !== undefined) {
+          <span class="holding-value fcf-value" [ngClass]="getValueColorClass(current.freeCashFlow)">
+            {{ formatCurrency(current.freeCashFlow) }}
+          </span>
+          } @else {
+          <span class="holding-value neutral">—</span>
+          }
         </div>
 
         <div class="card-formula-row">
@@ -169,7 +175,7 @@
 
         <div class="card-value-row">
           @if (current.netCashFlow !== null && current.netCashFlow !== undefined) {
-          <span class="holding-value net-value" [ngClass]="getChangeClass(current.netCashFlow)">
+          <span class="holding-value net-value" [ngClass]="getValueColorClass(current.netCashFlow)">
             {{ formatCurrency(current.netCashFlow) }}
           </span>
           } @else {

@@ -415,9 +415,12 @@
   letter-spacing: -0.02em;
 }
 
-.fcf-value { color: #38bdf8; }
+.fcf-value { color: #34d399; }
+.fcf-value.positive { color: #34d399; }
+.fcf-value.negative { color: #f87171; }
+.fcf-value.neutral { color: #94a3b8; }
 .cfo-value { color: #34d399; }
-.net-value { color: #818cf8; }
+.net-value { color: #34d399; }
 .net-value.positive { color: #34d399; }
 .net-value.negative { color: #f87171; }
 .net-value.neutral { color: #94a3b8; }

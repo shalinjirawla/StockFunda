@@ -493,19 +493,13 @@ namespace StockLens_UnitTests
 
             var result = await client.GetStockFinancialsAndOverviewAsync("RELIANCE");
             _output.WriteLine("\n=== PARSED FINANCIALS IN CLIENT ===");
-            foreach (var f in result.Financials.Take(5))
+            if (result?.Financials != null)
             {
-                _output.WriteLine($"FY: {f.FiscalYear} | PeriodEnd: {f.PeriodEndDate:yyyy-MM-dd} | Revenue: {f.Revenue} | OperatingProfit: {f.OperatingProfit} | NetProfit: {f.NetProfit} | CFO: {f.OperatingCashFlow} | Capex: {f.Capex} | FCF: {f.FreeCashFlow}");
-                if (f.OperatingCashFlow.HasValue && f.OperatingProfit.HasValue && f.OperatingProfit.Value != 0)
+                foreach (var f in result.Financials.Take(5))
                 {
-                    _output.WriteLine($"   -> CFO / OP: {f.OperatingCashFlow.Value} / {f.OperatingProfit.Value} = {f.OperatingCashFlow.Value / f.OperatingProfit.Value:F4} ({Math.Round((f.OperatingCashFlow.Value / f.OperatingProfit.Value) * 100, 2)}%)");
-                }
-                if (f.OperatingCashFlow.HasValue && f.NetProfit.HasValue && f.NetProfit.Value != 0)
-                {
-                    _output.WriteLine($"   -> CFO / NetProfit (PAT): {f.OperatingCashFlow.Value} / {f.NetProfit.Value} = {f.OperatingCashFlow.Value / f.NetProfit.Value:F4} ({Math.Round((f.OperatingCashFlow.Value / f.NetProfit.Value) * 100, 2)}%)");
+                    _output.WriteLine($"FY: {f.FiscalYear} | PeriodEnd: {f.PeriodEndDate:yyyy-MM-dd} | Revenue: {f.Revenue} | OperatingProfit: {f.OperatingProfit} | NetProfit: {f.NetProfit} | CFO: {f.OperatingCashFlow} | Capex: {f.Capex} | FCF: {f.FreeCashFlow}");
                 }
             }
         }
     }
 }
-

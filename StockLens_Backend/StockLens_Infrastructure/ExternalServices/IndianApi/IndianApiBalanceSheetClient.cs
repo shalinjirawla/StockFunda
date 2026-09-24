@@ -483,8 +483,21 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
                                             period.OtherIncome = oi;
                                         else if ((key == "NetIncomeBeforeTaxes" || key == "IncomeBeforeTaxes" || key == "EarningsBeforeTaxes" || key == "ProfitBeforeTax" || key == "PBT") && TryExtractDecimal(v, out var pbt))
                                             period.ProfitBeforeTax = pbt;
-                                        else if ((key == "ProvisionforIncomeTaxes" || key == "IncomeTaxExpense" || key == "Tax" || key == "Taxes") && TryExtractDecimal(v, out var tax))
+                                        else if ((key == "ProvisionforIncomeTaxes" || key == "Provision For Income Taxes" || key == "ProvisionForIncomeTaxes" || key == "Provision for Income Taxes" ||
+                                                  key == "ProvisionforTax" || key == "Provision For Tax" || key == "ProvisionForTax" || key == "Provision for Tax" ||
+                                                  key == "ProvisionforTaxes" || key == "Provision For Taxes" || key == "ProvisionForTaxes" || key == "Provision for Taxes" ||
+                                                  key == "IncomeTaxExpense" || key == "Income Tax Expense" || key == "IncomeTax" || key == "Income Tax" ||
+                                                  key == "TaxExpense" || key == "Tax Expense" || key == "TotalTaxExpense" || key == "Total Tax Expense" ||
+                                                  key == "CurrentTax" || key == "Current Tax" || key == "Tax" || key == "Taxes" || key == "Taxation" ||
+                                                  (key != null && key.StartsWith("Provision", StringComparison.OrdinalIgnoreCase) && key.Contains("Tax", StringComparison.OrdinalIgnoreCase)) ||
+                                                  (key != null && (key.StartsWith("Tax", StringComparison.OrdinalIgnoreCase) || key.StartsWith("IncomeTax", StringComparison.OrdinalIgnoreCase)) &&
+                                                   !key.Contains("%") && !key.Contains("Rate", StringComparison.OrdinalIgnoreCase) && !key.Contains("Percent", StringComparison.OrdinalIgnoreCase) && !key.Contains("Before", StringComparison.OrdinalIgnoreCase)))
+                                                 && TryExtractDecimal(v, out var tax))
                                             period.Tax = Math.Abs(tax);
+                                        else if ((key == "Tax %" || key == "Tax % (PBT)" || key == "TaxPercent" || key == "TaxPercentage" || key == "TaxRate" || key == "EffectiveTaxRate" ||
+                                                  (key != null && key.StartsWith("Tax", StringComparison.OrdinalIgnoreCase) && (key.Contains("%") || key.Contains("Percent", StringComparison.OrdinalIgnoreCase) || key.Contains("Rate", StringComparison.OrdinalIgnoreCase))))
+                                                 && TryExtractDecimal(v, out var taxPct))
+                                            period.TaxPercentage = taxPct;
                                         else if ((key == "NetIncome" || key == "NetProfit" || key == "PAT") && TryExtractDecimal(v, out var np))
                                             period.NetProfit = np;
                                         else if (key == "NetIncomeAfterTaxes" && TryExtractDecimal(v, out var npat) && !period.NetProfit.HasValue)
@@ -511,7 +524,22 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
                                     }
                                 }
 
-                                if (period.Tax.HasValue && period.ProfitBeforeTax.HasValue && period.ProfitBeforeTax.Value > 0)
+                                // Fallback Tax calculations
+                                if (!period.Tax.HasValue && period.TaxPercentage.HasValue && period.ProfitBeforeTax.HasValue)
+                                {
+                                    period.Tax = Math.Round((period.TaxPercentage.Value / 100m) * period.ProfitBeforeTax.Value, 2);
+                                }
+
+                                if (!period.Tax.HasValue && period.ProfitBeforeTax.HasValue && period.NetProfit.HasValue)
+                                {
+                                    var computedTax = period.ProfitBeforeTax.Value - period.NetProfit.Value;
+                                    if (computedTax >= 0)
+                                    {
+                                        period.Tax = Math.Round(computedTax, 2);
+                                    }
+                                }
+
+                                if (!period.TaxPercentage.HasValue && period.Tax.HasValue && period.ProfitBeforeTax.HasValue && period.ProfitBeforeTax.Value > 0)
                                 {
                                     period.TaxPercentage = Math.Round((period.Tax.Value / period.ProfitBeforeTax.Value) * 100m, 2);
                                 }
@@ -525,20 +553,44 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
                                     if (item.TryGetProperty("key", out var k) && item.TryGetProperty("value", out var v))
                                     {
                                         var key = k.GetString();
-                                        if ((key == "TotalAssets" || key == "TotalAsset") && TryExtractDecimal(v, out var ta))
+                                        if (string.IsNullOrWhiteSpace(key)) continue;
+
+                                        if ((key == "TotalAssets" || key == "TotalAsset" || key == "TotalLiabilitiesShareholders'Equity") && TryExtractDecimal(v, out var ta))
                                             period.TotalAssets = ta;
                                         else if ((key == "TotalLiabilities" || key == "TotalLiability") && TryExtractDecimal(v, out var tl))
                                             period.TotalLiabilities = tl;
                                         else if ((key == "TotalCurrentLiabilities" || key == "CurrentLiabilities") && TryExtractDecimal(v, out var tcl))
                                             period.TotalCurrentLiabilities = tcl;
-                                        else if ((key == "TotalDebt" || key == "TotalLongTermDebt" || key == "Borrowings" || key == "Debt") && TryExtractDecimal(v, out var td))
+                                        else if ((key == "TotalCurrentAssets" || key == "CurrentAssets") && TryExtractDecimal(v, out var tca))
+                                            period.TotalCurrentAssets = tca;
+                                        else if ((key == "TotalDebt" || key == "Debt") && TryExtractDecimal(v, out var td))
                                             period.TotalDebt = td;
+                                        else if ((key == "LongTermDebt" || key == "TotalLongTermDebt" || key == "Borrowings") && TryExtractDecimal(v, out var ltd))
+                                            period.LongTermDebt = ltd;
+                                        else if ((key == "NotesPayable/ShortTermDebt" || key == "ShortTermDebt" || key == "CurrentPortofLTDebt/CapitalLeases") && TryExtractDecimal(v, out var std))
+                                            period.ShortTermDebt = std;
                                         else if ((key == "TotalEquity" || key == "ShareholdersEquity" || key == "NetWorth") && TryExtractDecimal(v, out var te))
                                             period.TotalEquity = te;
-                                        else if ((key == "OtherEquityTotal" || key == "OtherEquity" || key == "ReservesAndSurplus" || key == "Reserves") && TryExtractDecimal(v, out var oe))
+                                        else if ((key == "OtherEquityTotal" || key == "OtherEquity" || key == "ReservesAndSurplus" || key == "Reserves" || key == "RetainedEarnings(AccumulatedDeficit)") && TryExtractDecimal(v, out var oe))
                                             period.OtherEquity = oe;
                                         else if ((key == "CommonStockTotal" || key == "EquityCapital" || key == "ShareCapital" || key == "CommonStock") && TryExtractDecimal(v, out var cs))
                                             period.EquityCapital = cs;
+                                        else if ((key == "Property/Plant/EquipmentTotal-Net" || key == "Property/Plant/EquipmentTotal-Gross" || key == "FixedAssets") && TryExtractDecimal(v, out var fa))
+                                            period.FixedAssets = fa;
+                                        else if ((key == "GoodwillNet" || key == "IntangiblesNet" || key == "CWIP" || key == "CapitalWorkInProgress") && TryExtractDecimal(v, out var cw))
+                                            period.Cwip = cw;
+                                        else if ((key == "LongTermInvestments" || key == "ShortTermInvestments" || key == "Investments") && TryExtractDecimal(v, out var inv))
+                                            period.Investments = (period.Investments ?? 0) + inv;
+                                        else if ((key == "OtherCurrentAssetsTotal" || key == "OtherLongTermAssetsTotal" || key == "OtherAssets") && TryExtractDecimal(v, out var oa))
+                                            period.OtherAssets = (period.OtherAssets ?? 0) + oa;
+                                        else if ((key == "OtherLiabilitiesTotal" || key == "OtherCurrentliabilitiesTotal" || key == "OtherLiabilities") && TryExtractDecimal(v, out var ol))
+                                            period.OtherLiabilities = (period.OtherLiabilities ?? 0) + ol;
+                                        else if ((key == "AccountsReceivable-TradeNet" || key == "TotalReceivablesNet" || key == "TradeReceivables") && TryExtractDecimal(v, out var tr))
+                                            period.TradeReceivables = tr;
+                                        else if ((key == "TotalInventory" || key == "Inventory") && TryExtractDecimal(v, out var tinv))
+                                            period.TotalInventory = tinv;
+                                        else if ((key == "AccountsPayable" || key == "TotalPayables" || key == "TradePayables") && TryExtractDecimal(v, out var ap))
+                                            period.AccountsPayable = ap;
                                         else if ((key == "TangibleBookValueperShareCommonEq" || key == "BookValuePerShare" || key == "BookValue") && TryExtractDecimal(v, out var tbv))
                                             period.BookValuePerShare = tbv;
                                         else if ((key == "TotalCommonSharesOutstanding" || key == "TotalShares" || key == "SharesOutstanding") && TryExtractDecimal(v, out var tcso))

@@ -407,6 +407,29 @@ namespace StockLens_BusinessLayer.Services
 
                         var (totEq, eqSrc, eqPer) = DetermineTotalEquity(null, latestBsDb);
 
+                        decimal? debtorDays = null, inventoryDays = null, payableDays = null;
+                        if (latestAnnual != null)
+                        {
+                            if (latestAnnual.TradeReceivables.HasValue && latestAnnual.TradeReceivables.Value > 0 && latestAnnual.Revenue.HasValue && latestAnnual.Revenue.Value > 0)
+                            {
+                                debtorDays = Math.Round((latestAnnual.TradeReceivables.Value / latestAnnual.Revenue.Value) * 365m, 1);
+                            }
+
+                            var cogs = latestAnnual.Expenses ?? (latestAnnual.Revenue.HasValue && latestAnnual.OperatingProfit.HasValue ? latestAnnual.Revenue.Value - latestAnnual.OperatingProfit.Value : null);
+                            if (cogs.HasValue && cogs.Value > 0)
+                            {
+                                if (latestAnnual.TotalInventory.HasValue && latestAnnual.TotalInventory.Value > 0)
+                                {
+                                    inventoryDays = Math.Round((latestAnnual.TotalInventory.Value / cogs.Value) * 365m, 1);
+                                }
+
+                                if (latestAnnual.AccountsPayable.HasValue && latestAnnual.AccountsPayable.Value > 0)
+                                {
+                                    payableDays = Math.Round((latestAnnual.AccountsPayable.Value / cogs.Value) * 365m, 1);
+                                }
+                            }
+                        }
+
                         return new StockRatiosDto
                         {
                             Roe = indianData.Roe,
@@ -431,7 +454,10 @@ namespace StockLens_BusinessLayer.Services
                             MarketCapSource = mcSource,
                             SectorPe = sectorPe,
                             SectorPeSector = sectorName,
-                            SectorPeAsOfDate = sectorAsOf
+                            SectorPeAsOfDate = sectorAsOf,
+                            DebtorDays = debtorDays,
+                            InventoryDays = inventoryDays,
+                            PayableDays = payableDays
                         };
                     }
                 }
@@ -880,6 +906,29 @@ namespace StockLens_BusinessLayer.Services
                     }
                 }
 
+                // Dynamic Mathematical Derivation Fallback from raw balance sheet & P&L
+                if (string.Equals(period.PeriodType, "annual", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!dDays.HasValue && period.TradeReceivables.HasValue && period.TradeReceivables.Value > 0 && period.Revenue.HasValue && period.Revenue.Value > 0)
+                    {
+                        dDays = Math.Round((period.TradeReceivables.Value / period.Revenue.Value) * 365m, 1);
+                    }
+
+                    var cogs = period.Expenses ?? (period.Revenue.HasValue && period.OperatingProfit.HasValue ? period.Revenue.Value - period.OperatingProfit.Value : null);
+                    if (cogs.HasValue && cogs.Value > 0)
+                    {
+                        if (!iDays.HasValue && period.TotalInventory.HasValue && period.TotalInventory.Value > 0)
+                        {
+                            iDays = Math.Round((period.TotalInventory.Value / cogs.Value) * 365m, 1);
+                        }
+
+                        if (!pDays.HasValue && period.AccountsPayable.HasValue && period.AccountsPayable.Value > 0)
+                        {
+                            pDays = Math.Round((period.AccountsPayable.Value / cogs.Value) * 365m, 1);
+                        }
+                    }
+                }
+
                 var matchingBs = balanceSheets.FirstOrDefault(b =>
                     (!string.IsNullOrEmpty(b.FiscalYear) && b.FiscalYear.Equals(period.FiscalYear, StringComparison.OrdinalIgnoreCase)) ||
                     (b.PeriodEndDate.HasValue && period.PeriodEndDate.HasValue && b.PeriodEndDate.Value.Date == period.PeriodEndDate.Value.Date))
@@ -903,6 +952,16 @@ namespace StockLens_BusinessLayer.Services
                     if (period.Depreciation.HasValue) existing.Depreciation = period.Depreciation;
                     if (period.ProfitBeforeTax.HasValue) existing.ProfitBeforeTax = period.ProfitBeforeTax;
                     if (period.Tax.HasValue) existing.Tax = period.Tax;
+                    if (period.TaxPercentage.HasValue) existing.TaxPercentage = period.TaxPercentage;
+                    if (!existing.Tax.HasValue && existing.ProfitBeforeTax.HasValue && existing.NetProfit.HasValue)
+                    {
+                        var comp = existing.ProfitBeforeTax.Value - existing.NetProfit.Value;
+                        if (comp >= 0) existing.Tax = Math.Round(comp, 2);
+                    }
+                    if (!existing.TaxPercentage.HasValue && existing.Tax.HasValue && existing.ProfitBeforeTax.HasValue && existing.ProfitBeforeTax.Value > 0)
+                    {
+                        existing.TaxPercentage = Math.Round((existing.Tax.Value / existing.ProfitBeforeTax.Value) * 100m, 2);
+                    }
                     if (period.OtherIncome.HasValue) existing.OtherIncome = period.OtherIncome;
                     if (period.NetProfit.HasValue) existing.NetProfit = period.NetProfit;
                     if (period.Eps.HasValue) existing.Eps = period.Eps;
@@ -936,6 +995,9 @@ namespace StockLens_BusinessLayer.Services
                 }
                 else
                 {
+                    var calculatedTax = period.Tax ?? (period.ProfitBeforeTax.HasValue && period.NetProfit.HasValue && period.ProfitBeforeTax.Value >= period.NetProfit.Value ? Math.Round(period.ProfitBeforeTax.Value - period.NetProfit.Value, 2) : null);
+                    var calculatedTaxPct = period.TaxPercentage ?? (calculatedTax.HasValue && period.ProfitBeforeTax.HasValue && period.ProfitBeforeTax.Value > 0 ? Math.Round((calculatedTax.Value / period.ProfitBeforeTax.Value) * 100m, 2) : null);
+
                     var newEntity = new StockFinancial
                     {
                         StockId = stock.Id,
@@ -949,7 +1011,8 @@ namespace StockLens_BusinessLayer.Services
                         Interest = period.Interest,
                         Depreciation = period.Depreciation,
                         ProfitBeforeTax = period.ProfitBeforeTax,
-                        Tax = period.Tax,
+                        Tax = calculatedTax,
+                        TaxPercentage = calculatedTaxPct,
                         OtherIncome = period.OtherIncome,
                         NetProfit = period.NetProfit,
                         Eps = period.Eps,
@@ -1014,6 +1077,7 @@ namespace StockLens_BusinessLayer.Services
             if (!entity.Depreciation.HasValue && latestFin?.Depreciation.HasValue == true) entity.Depreciation = latestFin.Depreciation;
             if (!entity.ProfitBeforeTax.HasValue && latestFin?.ProfitBeforeTax.HasValue == true) entity.ProfitBeforeTax = latestFin.ProfitBeforeTax;
             if (!entity.Tax.HasValue && latestFin?.Tax.HasValue == true) entity.Tax = latestFin.Tax;
+            if (!entity.TaxPercentage.HasValue && latestFin?.TaxPercentage.HasValue == true) entity.TaxPercentage = latestFin.TaxPercentage;
             if (!entity.OtherIncome.HasValue && latestFin?.OtherIncome.HasValue == true) entity.OtherIncome = latestFin.OtherIncome;
             if (!entity.OperatingProfitMargin.HasValue && latestFin?.OperatingProfitMargin.HasValue == true) entity.OperatingProfitMargin = latestFin.OperatingProfitMargin;
 

@@ -16,6 +16,7 @@ import { StockQuarterlyResultsResponse } from '../../models/stock-quarterly-resu
 import { StockHealthScoreResponse } from '../../models/stock-evaluation.model';
 import { TimeAgoPipe } from '../../pipes/time-ago.pipe';
 import { StockPriceChartComponent } from '../stock-price-chart/stock-price-chart.component';
+import { StockCandlestickChartComponent } from '../stock-candlestick-chart/stock-candlestick-chart.component';
 
 export type NewsFilterTab = 'all' | 'filings' | 'announcements';
 export type DetailModalType = null | 'ownership' | 'quarters' | 'profitability' | 'cashflow' | 'balancesheet' | 'valuation';
@@ -27,7 +28,8 @@ export type DetailModalType = null | 'ownership' | 'quarters' | 'profitability' 
     CommonModule,
     FormsModule,
     TimeAgoPipe,
-    StockPriceChartComponent
+    StockPriceChartComponent,
+    StockCandlestickChartComponent
   ],
   templateUrl: './stock-dashboard.component.html',
   styleUrl: './stock-dashboard.component.css'
@@ -57,6 +59,7 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
   selectedExchange = signal<string>('NSE');
   searchQuery = signal<string>('');
   chartPeriod = signal<string>('1yr');
+  candlestickPeriod = signal<string>('1yr');
   newsTab = signal<NewsFilterTab>('all');
   activeDetailModal = signal<DetailModalType>(null);
 
@@ -219,6 +222,10 @@ export class StockDashboardComponent implements OnInit, OnDestroy {
 
   setChartPeriod(period: string): void {
     this.chartPeriod.set(period);
+  }
+
+  setCandlestickPeriod(period: string): void {
+    this.candlestickPeriod.set(period);
   }
 
   setNewsTab(tab: NewsFilterTab): void {

@@ -60,10 +60,21 @@ namespace StockLens_Infrastructure.ExternalServices.IndianApi
         public decimal? TotalAssets { get; set; }
         public decimal? TotalLiabilities { get; set; }
         public decimal? TotalCurrentLiabilities { get; set; }
+        public decimal? TotalCurrentAssets { get; set; }
         public decimal? TotalDebt { get; set; }
+        public decimal? LongTermDebt { get; set; }
+        public decimal? ShortTermDebt { get; set; }
         public decimal? TotalEquity { get; set; }
         public decimal? OtherEquity { get; set; }
         public decimal? EquityCapital { get; set; }
+        public decimal? FixedAssets { get; set; }
+        public decimal? Cwip { get; set; }
+        public decimal? Investments { get; set; }
+        public decimal? OtherAssets { get; set; }
+        public decimal? OtherLiabilities { get; set; }
+        public decimal? TradeReceivables { get; set; }
+        public decimal? TotalInventory { get; set; }
+        public decimal? AccountsPayable { get; set; }
         public decimal? BookValuePerShare { get; set; }
         public decimal? TotalShares { get; set; }
         public string ConsolidationType { get; set; } = "consolidated";

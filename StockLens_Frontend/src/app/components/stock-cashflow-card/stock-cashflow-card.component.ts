@@ -122,6 +122,11 @@ export class StockCashflowCardComponent {
     return 'neutral';
   }
 
+  getValueColorClass(value: number | null | undefined): string {
+    if (value === null || value === undefined || isNaN(value)) return 'neutral';
+    return value < 0 ? 'negative' : 'positive';
+  }
+
   getArrow(value: number | null | undefined): string {
     if (value === null || value === undefined) return '';
     if (value > 0) return '▲';

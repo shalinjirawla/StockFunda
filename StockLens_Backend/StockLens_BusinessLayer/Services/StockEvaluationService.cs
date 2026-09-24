@@ -157,65 +157,105 @@ namespace StockLens_BusinessLayer.Services
             var ratios = cashflow?.Ratios;
             var summary = cashflow?.Summary;
 
-            // ROCE & ROE (8 pts)
-            if (ratios != null && ratios.Roe.HasValue && ratios.Roce.HasValue)
+            // 1. ROCE & ROE (8 pts)
+            if (ratios != null && (ratios.Roe.HasValue || ratios.Roce.HasValue))
             {
-                var roe = ratios.Roe.Value;
-                var roce = ratios.Roce.Value;
+                var roe = ratios.Roe ?? 0;
+                var roce = ratios.Roce ?? 0;
+
                 if (roce >= 15 && roe >= 15)
                 {
                     points += 8;
                     pros.Add($"High Capital Compounding: ROE ({roe:F1}%) & ROCE ({roce:F1}%) > 15%");
                     category.Highlights.Add("High ROE & ROCE (>15%)");
                 }
-                else if (roce >= 10 && roe >= 10)
+                else if ((roce >= 10 && roe >= 10) || ((roce + roe) / 2m >= 11m))
+                {
+                    points += 6;
+                    category.Highlights.Add("Healthy ROE & ROCE (10-15%)");
+                }
+                else if (roce >= 7 || roe >= 7)
                 {
                     points += 4;
-                    category.Highlights.Add("Moderate ROE & ROCE (10-15%)");
+                    category.Highlights.Add("Stable Capital Return (7-10%)");
                 }
                 else
                 {
-                    cons.Add($"Low ROE ({roe:F1}%) / ROCE ({roce:F1}%) underperforming capital efficiency benchmark");
+                    cons.Add($"Moderate/Low ROE ({roe:F1}%) / ROCE ({roce:F1}%) underperforming capital efficiency benchmark");
                 }
             }
             else
             {
                 points += 4; // Neutral points for missing data
-                category.Highlights.Add("ROE/ROCE Data Unavailable");
+                category.Highlights.Add("ROE/ROCE Baseline");
             }
 
-            // Free Cash Flow (7 pts)
-            var fcf = summary?.FreeCashFlow ?? 0;
-            if (fcf > 0)
+            // 2. Free Cash Flow & Operating Cash Flow (7 pts)
+            var fcf = summary?.FreeCashFlow;
+            var cfo = summary?.OperatingCashFlow;
+
+            if (fcf.HasValue && fcf.Value > 0)
             {
                 points += 7;
-                pros.Add($"Positive Free Cash Flow (₹{fcf:N0} Cr) indicates genuine self-funded operations");
+                pros.Add($"Positive Free Cash Flow (₹{fcf.Value:N0} Cr) indicates self-funded organic expansion");
                 category.Highlights.Add("Positive Free Cash Flow");
             }
-            else if (fcf < 0)
+            else if (cfo.HasValue && cfo.Value > 0)
             {
-                cons.Add($"Negative Free Cash Flow (₹{fcf:N0} Cr) due to high capex or low operating conversion");
+                // Positive Operating Cash Flow with high Capex reinvestment for future capacity/growth
+                points += 4;
+                pros.Add($"Strong Operating Cash Flow (₹{cfo.Value:N0} Cr) reinvested into capacity expansion");
+                category.Highlights.Add("Robust Operating Cash Generation");
+            }
+            else if (fcf.HasValue && fcf.Value < 0)
+            {
+                cons.Add($"Negative Free Cash Flow (₹{fcf.Value:N0} Cr) due to heavy capital expenditure or operational lag");
+            }
+            else
+            {
+                points += 3;
             }
 
-            // CFO / Operating Profit (5 pts)
+            // 3. CFO / Operating Profit Conversion Quality (5 pts)
             var cfoRatio = summary?.CfoToOperatingProfitRatio;
             if (cfoRatio.HasValue && cfoRatio.Value >= 0.8m)
             {
                 points += 5;
                 pros.Add($"High Quality of Earnings: CFO/OP conversion is {cfoRatio.Value * 100:F0}%");
-                category.Highlights.Add("High CFO/OP cash conversion");
+                category.Highlights.Add("High CFO/OP cash conversion (>80%)");
             }
-            else if (cfoRatio.HasValue && cfoRatio.Value < 0.5m)
+            else if (cfoRatio.HasValue && cfoRatio.Value >= 0.5m)
+            {
+                points += 3;
+                category.Highlights.Add("Healthy CFO/OP conversion (50-80%)");
+            }
+            else if (cfoRatio.HasValue && cfoRatio.Value >= 0.2m)
+            {
+                points += 1;
+            }
+            else if (cfoRatio.HasValue && cfoRatio.Value < 0.2m && cfoRatio.Value > 0)
             {
                 cons.Add("Low CFO/OP ratio (< 50%): Accounting profits lagging actual cash realization");
             }
+            else
+            {
+                points += 3; // Baseline if ratio not calculable
+            }
 
-            // Net Cash Flow (5 pts)
+            // 4. Net Cash Flow (5 pts)
             var netCashFlow = summary?.NetCashFlow ?? 0;
             if (netCashFlow > 0)
             {
                 points += 5;
                 category.Highlights.Add("Positive Net Cash Flow");
+            }
+            else if (summary?.NetCashFlow.HasValue == true)
+            {
+                points += 2;
+            }
+            else
+            {
+                points += 3; // Neutral baseline
             }
 
             category.EarnedPoints = points;
@@ -240,7 +280,7 @@ namespace StockLens_BusinessLayer.Services
                 return category;
             }
 
-            // PEG Ratio (10 pts)
+            // 1. PEG Ratio (10 pts)
             var peg = ratios.PegRatio;
             if (peg.HasValue && peg.Value > 0 && peg.Value < 1.0m)
             {
@@ -250,51 +290,85 @@ namespace StockLens_BusinessLayer.Services
             }
             else if (peg.HasValue && peg.Value >= 1.0m && peg.Value <= 1.5m)
             {
-                points += 6;
+                points += 7;
                 category.Highlights.Add("Fairly Valued PEG (1.0 - 1.5x)");
             }
-            else if (peg.HasValue && peg.Value > 2.0m)
+            else if (peg.HasValue && peg.Value > 1.5m && peg.Value <= 2.5m)
             {
-                cons.Add($"High PEG valuation ({peg.Value:F2}x > 2.0)");
+                points += 4;
+                category.Highlights.Add("Reasonable PEG (1.5 - 2.5x)");
+            }
+            else if (peg.HasValue && peg.Value > 2.5m)
+            {
+                points += 1;
+                cons.Add($"High PEG valuation ({peg.Value:F2}x > 2.5)");
+            }
+            else
+            {
+                points += 5; // Neutral baseline when PEG is not available
+                category.Highlights.Add("Fair Value Baseline");
             }
 
-            // P/E vs Sector P/E (6 pts)
+            // 2. P/E vs Sector P/E (6 pts)
             var pe = ratios.PeRatio;
             var sectorPe = ratios.SectorPe;
             if (pe.HasValue && sectorPe.HasValue && sectorPe.Value > 0)
             {
-                if (pe.Value > 0 && pe.Value < sectorPe.Value)
+                if (pe.Value > 0 && pe.Value <= sectorPe.Value)
                 {
                     points += 6;
-                    pros.Add($"Trading at discount to Industry: P/E ({pe.Value:F1}x) < Sector P/E ({sectorPe.Value:F1}x)");
+                    pros.Add($"Trading at discount to Industry: P/E ({pe.Value:F1}x) <= Sector P/E ({sectorPe.Value:F1}x)");
                     category.Highlights.Add("Discount to Sector P/E");
                 }
-                else if (pe.Value <= sectorPe.Value * 1.2m)
+                else if (pe.Value <= sectorPe.Value * 1.3m)
                 {
-                    points += 3;
+                    points += 4;
+                    category.Highlights.Add("Fair Sector P/E Alignment");
                 }
-                else if (pe.Value > sectorPe.Value * 1.5m)
+                else if (pe.Value <= sectorPe.Value * 1.8m)
+                {
+                    points += 2;
+                }
+                else
                 {
                     cons.Add($"Premium Valuation: P/E ({pe.Value:F1}x) significantly above Sector ({sectorPe.Value:F1}x)");
                 }
             }
+            else if (pe.HasValue && pe.Value > 0)
+            {
+                if (pe.Value <= 20) points += 5;
+                else if (pe.Value <= 35) points += 3;
+                else points += 1;
+            }
+            else
+            {
+                points += 3;
+            }
 
-            // 52W High / Low Position (4 pts)
+            // 3. 52W High / Low Position (4 pts)
             var price = ratios.CurrentPrice;
             var high = ratios.Week52High;
             if (price.HasValue && high.HasValue && high.Value > 0)
             {
                 var discountFromHigh = ((high.Value - price.Value) / high.Value) * 100;
-                if (discountFromHigh >= 10 && discountFromHigh <= 30)
+                if (discountFromHigh >= 10 && discountFromHigh <= 35)
                 {
                     points += 4;
                     pros.Add($"Attractive entry point: Trading {discountFromHigh:F0}% off 52W High");
                     category.Highlights.Add("Healthy pullback off 52W High");
                 }
-                else if (discountFromHigh < 10)
+                else if (discountFromHigh < 10 && discountFromHigh >= 0)
                 {
                     points += 2;
                 }
+                else
+                {
+                    points += 1;
+                }
+            }
+            else
+            {
+                points += 2;
             }
 
             category.EarnedPoints = points;
@@ -317,10 +391,38 @@ namespace StockLens_BusinessLayer.Services
             };
 
             int points = 0;
-            var op = quarters?.Summary?.OperatingProfit ?? cashflow?.Summary?.OperatingProfit ?? 0;
-            var interest = quarters?.Summary?.Interest ?? cashflow?.Summary?.Interest ?? 0;
 
-            // Borrowings check from Balance Sheet to validate "Debt-Free" status
+            // Harmonize Operating Profit and Interest to Annual figures
+            decimal op = 0m;
+            decimal interest = 0m;
+
+            if (cashflow?.Summary?.OperatingProfit.HasValue == true && cashflow.Summary.OperatingProfit.Value > 0)
+            {
+                op = cashflow.Summary.OperatingProfit.Value;
+            }
+            else if (quarters?.History != null && quarters.History.Count >= 4)
+            {
+                op = quarters.History.Take(4).Sum(q => q.OperatingProfit ?? 0);
+            }
+            else if (quarters?.Summary?.OperatingProfit.HasValue == true)
+            {
+                op = quarters.Summary.OperatingProfit.Value * 4m; // Annualize single quarter
+            }
+
+            if (cashflow?.Summary?.Interest.HasValue == true && cashflow.Summary.Interest.Value > 0)
+            {
+                interest = cashflow.Summary.Interest.Value;
+            }
+            else if (quarters?.History != null && quarters.History.Count >= 4)
+            {
+                interest = quarters.History.Take(4).Sum(q => q.Interest ?? 0);
+            }
+            else if (quarters?.Summary?.Interest.HasValue == true)
+            {
+                interest = quarters.Summary.Interest.Value * 4m; // Annualize single quarter
+            }
+
+            // Borrowings check from Balance Sheet
             var borrowingsRow = balanceSheet?.LineItems?.FirstOrDefault(l =>
                 l.Name.IndexOf("Borrowing", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 l.Name.IndexOf("Debt", StringComparison.OrdinalIgnoreCase) >= 0);
@@ -335,7 +437,7 @@ namespace StockLens_BusinessLayer.Services
                 }
             }
 
-            // Interest Coverage Ratio (8 pts)
+            // 1. Interest Coverage Ratio (8 pts)
             if (interest <= 0 && latestBorrowings <= 0)
             {
                 points += 8; // True zero debt
@@ -344,11 +446,10 @@ namespace StockLens_BusinessLayer.Services
             }
             else if (interest <= 0 && latestBorrowings > 0)
             {
-                // API missing interest data, but debt exists. Neutral points to avoid fake positive.
                 points += 4;
-                category.Highlights.Add("Interest Data Unavailable");
+                category.Highlights.Add("Interest Data Baseline");
             }
-            else
+            else if (interest > 0 && op > 0)
             {
                 var coverage = op / interest;
                 if (coverage >= 4.0m)
@@ -359,18 +460,25 @@ namespace StockLens_BusinessLayer.Services
                 }
                 else if (coverage >= 2.0m)
                 {
-                    points += 4;
+                    points += 5;
                     category.Highlights.Add("Moderate Interest Coverage (2-4x)");
                 }
-                else if (coverage < 1.2m)
+                else if (coverage >= 1.2m)
+                {
+                    points += 2;
+                }
+                else
                 {
                     cons.Add($"Critically Low Interest Coverage ({coverage:F1}x) - debt service pressure");
                     redFlags.Add("Interest coverage below 1.2x (High solvency risk)");
                 }
             }
+            else
+            {
+                points += 4;
+            }
 
-            // Borrowings trend in Balance Sheet (7 pts)
-
+            // 2. Borrowings trend in Balance Sheet (7 pts)
             if (borrowingsRow != null && borrowingsRow.Values.Count >= 2)
             {
                 var nonNullVals = borrowingsRow.Values.Where(v => v.HasValue).Select(v => v!.Value).ToList();
@@ -381,19 +489,25 @@ namespace StockLens_BusinessLayer.Services
                     if (prev > 0)
                     {
                         var changePct = ((latest - prev) / prev) * 100;
-                        if (changePct <= 0)
+                        if (changePct <= 5)
                         {
                             points += 7;
-                            pros.Add($"Borrowings reduced by {Math.Abs(changePct):F1}% YoY");
-                            category.Highlights.Add("Deleveraging / Reducing Debt");
+                            pros.Add(changePct <= 0 ? $"Borrowings reduced by {Math.Abs(changePct):F1}% YoY" : "Borrowings stable YoY");
+                            category.Highlights.Add("Deleveraging / Stable Debt Profile");
                         }
-                        else if (changePct <= 10)
+                        else if (changePct <= 15)
                         {
                             points += 4;
+                            category.Highlights.Add("Controlled Debt Growth");
                         }
                         else if (changePct > 25)
                         {
                             cons.Add($"Total Borrowings increased rapidly by {changePct:F1}% YoY");
+                            points += 1;
+                        }
+                        else
+                        {
+                            points += 3;
                         }
                     }
                     else if (latest == 0)
@@ -428,31 +542,40 @@ namespace StockLens_BusinessLayer.Services
 
             int points = 0;
 
-            // Quarterly YoY Growth (8 pts)
+            // 1. Quarterly YoY Growth (8 pts)
             var salesGrowth = quarters?.YoYGrowth?.SalesGrowthPercent;
             var profitGrowth = quarters?.YoYGrowth?.NetProfitGrowthPercent;
 
             if (salesGrowth.HasValue && profitGrowth.HasValue)
             {
-                if (salesGrowth.Value >= 10 && profitGrowth.Value >= 12)
+                if (salesGrowth.Value >= 8 && profitGrowth.Value >= 10)
                 {
                     points += 8;
                     pros.Add($"Robust Growth: Latest Qtr Sales +{salesGrowth.Value:F1}% YoY, PAT +{profitGrowth.Value:F1}% YoY");
-                    category.Highlights.Add("Double-digit Topline & Bottomline Growth");
+                    category.Highlights.Add("Solid Topline & Bottomline Growth");
                 }
                 else if (salesGrowth.Value >= 0 && profitGrowth.Value >= 0)
                 {
-                    points += 4;
+                    points += 5;
+                    category.Highlights.Add("Positive Sales & Profit Expansion");
                 }
-                else if (profitGrowth.Value < -10)
+                else if (salesGrowth.Value >= 0 || profitGrowth.Value >= 0)
+                {
+                    points += 3;
+                }
+                else if (profitGrowth.Value < -15)
                 {
                     cons.Add($"Quarterly Profit contraction: Net profit fell {profitGrowth.Value:F1}% YoY");
                 }
-                
-                // Revenue-Profit Mismatch Red Flag
-                if (salesGrowth.Value > 15 && profitGrowth.Value < -10)
+                else
                 {
-                    redFlags.Add($"Revenue-Profit Mismatch: Sales grew {salesGrowth.Value:F1}% but Profits crashed {profitGrowth.Value:F1}% (Margin crush)");
+                    points += 2;
+                }
+                
+                // Revenue-Profit Mismatch Red Flag (Severe margin collapse)
+                if (salesGrowth.Value > 25 && profitGrowth.Value < -25)
+                {
+                    redFlags.Add($"Revenue-Profit Mismatch: Sales grew {salesGrowth.Value:F1}% but Profits crashed {profitGrowth.Value:F1}% (Severe margin crush)");
                 }
             }
             else
@@ -460,7 +583,7 @@ namespace StockLens_BusinessLayer.Services
                 points += 4;
             }
 
-            // 50 DMA & 200 DMA Trend (7 pts)
+            // 2. 50 DMA & 200 DMA Trend (7 pts)
             if (priceHistory != null && priceHistory.ClosePrices.Count > 0)
             {
                 var latestPrice = priceHistory.ClosePrices[^1];
@@ -480,9 +603,14 @@ namespace StockLens_BusinessLayer.Services
                         points += 4;
                         category.Highlights.Add("Trading above 200 DMA");
                     }
+                    else if (latestPrice > dma50.Value)
+                    {
+                        points += 3;
+                    }
                     else
                     {
                         cons.Add("Technical Downtrend: Price is currently below 200 DMA");
+                        points += 1;
                     }
                 }
                 else
@@ -517,21 +645,30 @@ namespace StockLens_BusinessLayer.Services
             var cur = shareholding?.CurrentPeriod;
             var change = shareholding?.Change;
 
-            // Promoter Holding (6 pts)
+            // 1. Promoter Holding (6 pts)
             if (cur?.Promoter.HasValue == true)
             {
                 var prom = cur.Promoter.Value;
                 var promChange = change?.Promoter ?? 0;
 
-                if (prom >= 50 && promChange >= 0)
+                if (prom >= 50 && promChange >= -0.5m)
                 {
                     points += 6;
-                    pros.Add($"High & Committed Promoter Stake ({prom:F1}%) with zero dilution");
+                    pros.Add($"High & Committed Promoter Stake ({prom:F1}%) with stable ownership");
                     category.Highlights.Add("Strong Promoter Ownership (>50%)");
                 }
                 else if (prom >= 40)
                 {
                     points += 4;
+                    category.Highlights.Add("Moderate Promoter Ownership (40-50%)");
+                }
+                else if (prom >= 30)
+                {
+                    points += 2;
+                }
+                else
+                {
+                    points += 1;
                 }
 
                 if (promChange <= -4.0m)
@@ -545,23 +682,29 @@ namespace StockLens_BusinessLayer.Services
                 points += 3;
             }
 
-            // Institutional (FII + DII) Trend (6 pts)
+            // 2. Institutional (FII + DII) Trend (6 pts)
             if (change != null)
             {
                 var instChange = (change.Fii ?? 0) + (change.Dii ?? 0);
-                if (instChange > 0.5m)
+                if (instChange > 0.3m)
                 {
                     points += 6;
                     pros.Add($"Institutional Accumulation: FII + DII increased holding by +{instChange:F2}%");
                     category.Highlights.Add("FII / DII Accumulation");
                 }
-                else if (instChange >= -0.2m)
+                else if (instChange >= -0.5m)
                 {
-                    points += 3;
+                    points += 4;
+                    category.Highlights.Add("Stable Institutional Stake");
                 }
-                else if (instChange < -1.5m)
+                else if (instChange < -2.0m)
                 {
                     cons.Add($"Institutional Selling: FII + DII reduced stake by {Math.Abs(instChange):F2}%");
+                    points += 1;
+                }
+                else
+                {
+                    points += 2;
                 }
             }
             else
@@ -569,13 +712,17 @@ namespace StockLens_BusinessLayer.Services
                 points += 3;
             }
 
-            // Fixed Assets / Capex Expansion (3 pts)
+            // 3. Fixed Assets / Capex Expansion (3 pts)
             var assetGrowth = balanceSheet?.AssetGrowthPercentage ?? 0;
-            if (assetGrowth >= 5.0m && assetGrowth <= 35.0m)
+            if (assetGrowth >= 4.0m && assetGrowth <= 35.0m)
             {
                 points += 3;
                 pros.Add($"Healthy Capacity Expansion: Fixed assets grew +{assetGrowth:F1}%");
                 category.Highlights.Add("Healthy Capex Expansion");
+            }
+            else if (assetGrowth > 0)
+            {
+                points += 2;
             }
             else
             {
@@ -604,7 +751,7 @@ namespace StockLens_BusinessLayer.Services
                 return category;
             }
 
-            // Debtor Days (4 pts)
+            // 1. Debtor Days (4 pts)
             if (ratios.DebtorDays.HasValue)
             {
                 var dd = ratios.DebtorDays.Value;
@@ -613,12 +760,17 @@ namespace StockLens_BusinessLayer.Services
                 if (dd <= 60 || ddChange <= 0)
                 {
                     points += 4;
-                    pros.Add($"Disciplined Collections: Debtor Days ({dd:N0} days) improving or fast");
+                    pros.Add($"Disciplined Collections: Debtor Days ({dd:N0} days) fast or improving");
                     category.Highlights.Add("Lean Debtor Days (<60 days)");
                 }
-                else if (ddChange > 15)
+                else if (dd <= 90)
+                {
+                    points += 2;
+                }
+                else if (ddChange > 20)
                 {
                     cons.Add($"Debtor Days lengthened by +{ddChange:F1}% (slower collections from clients)");
+                    points += 1;
                 }
                 else
                 {
@@ -630,11 +782,11 @@ namespace StockLens_BusinessLayer.Services
                 points += 2;
             }
 
-            // Inventory Days (3 pts)
+            // 2. Inventory Days (3 pts)
             if (ratios.InventoryDays.HasValue)
             {
                 var invChange = ratios.InventoryDaysYoY ?? 0;
-                if (invChange <= 5)
+                if (invChange <= 10 || ratios.InventoryDays.Value <= 60)
                 {
                     points += 3;
                     category.Highlights.Add("Optimal Inventory Turnover");
@@ -646,11 +798,11 @@ namespace StockLens_BusinessLayer.Services
             }
             else
             {
-                points += 1;
+                points += 2;
             }
 
-            // Payable Days (3 pts)
-            if (ratios.PayableDays.HasValue)
+            // 3. Payable Days (3 pts)
+            if (ratios.PayableDays.HasValue && ratios.PayableDays.Value > 0)
             {
                 points += 3;
             }

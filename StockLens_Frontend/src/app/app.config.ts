@@ -9,6 +9,6 @@ export const appConfig: ApplicationConfig = {
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes),
     provideHttpClient(withFetch()),
-    provideHighcharts({ instance: () => import('highcharts') })
+    provideHighcharts({ instance: () => import('highcharts/highstock') })
   ]
 };

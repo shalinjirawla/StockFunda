@@ -462,5 +462,147 @@ namespace StockLens_UnitTests
             result.History[1].Tax.Should().Be(6579m);
             result.History[1].NetProfit.Should().Be(18971m);
         }
+
+        [Fact]
+        public async Task GetQuarterlyResultsBySymbolAsync_WhenTaxMissingInPayload_ShouldComputeFromProfitBeforeTaxAndNetProfitAndPersist()
+        {
+            // Arrange
+            var stock = new Stock { Id = 7, Symbol = "INFY", Exchange = "NSE" };
+            var stockRepo = new Mock<IStockRepository>();
+            stockRepo.Setup(r => r.GetOrCreateStockAsync("INFY", "NSE", null, null, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(stock);
+
+            var financialRepo = new Mock<IStockFinancialRepository>();
+            var savedEntities = new List<StockFinancial>();
+
+            financialRepo.SetupSequence(r => r.GetFinancialsByStockIdAsync(7, "quarterly", 12))
+                .ReturnsAsync(new List<StockFinancial>())
+                .ReturnsAsync(savedEntities);
+
+            financialRepo.Setup(r => r.GetByStockIdAndPeriodKeyAsync(7, It.IsAny<string>()))
+                .ReturnsAsync((StockFinancial?)null);
+
+            financialRepo.Setup(r => r.AddAsync(It.IsAny<StockFinancial>()))
+                .Callback<StockFinancial>(e => savedEntities.Add(e))
+                .ReturnsAsync((StockFinancial e) => e);
+
+            var indianApiMock = new Mock<IIndianApiBalanceSheetClient>();
+            var mockOverview = new IndianApiStockOverviewDto
+            {
+                Symbol = "INFY",
+                Financials = new List<IndianApiFinancialPeriodDto>
+                {
+                    new IndianApiFinancialPeriodDto
+                    {
+                        FiscalYear = "Dec 2024",
+                        PeriodEndDate = new DateTime(2024, 12, 31),
+                        PeriodType = "quarterly",
+                        Revenue = 40000m,
+                        OperatingProfit = 10000m,
+                        Depreciation = 1200m,
+                        ProfitBeforeTax = 9000m,
+                        Tax = null, // Missing tax in payload
+                        NetProfit = 6800m,
+                        Eps = 16.5m
+                    }
+                }
+            };
+
+            indianApiMock.Setup(p => p.GetStockFinancialsAndOverviewAsync("INFY", "NSE", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(mockOverview);
+
+            var companyRepo = new Mock<ICompanyRepository>();
+            var yahooMock = new Mock<IYahooFinanceClient>();
+
+            var service = new StockQuarterlyResultsService(
+                stockRepo.Object,
+                financialRepo.Object,
+                companyRepo.Object,
+                _mapper,
+                NullLogger<StockQuarterlyResultsService>.Instance,
+                indianApiMock.Object,
+                yahooMock.Object);
+
+            // Act
+            var result = await service.GetQuarterlyResultsBySymbolAsync("INFY", "NSE", forceRefresh: true);
+
+            // Assert
+            result.Should().NotBeNull();
+            savedEntities.Should().HaveCount(1);
+            // 9000 PBT - 6800 NetProfit = 2200 Tax
+            savedEntities[0].Tax.Should().Be(2200m);
+            // 2200 / 9000 * 100 = 24.44%
+            savedEntities[0].TaxPercentage.Should().Be(24.44m);
+            result.Summary.Tax.Should().Be(2200m);
+            result.Summary.TaxPercentage.Should().Be(24.44m);
+        }
+
+        [Fact]
+        public async Task GetQuarterlyResultsBySymbolAsync_WhenDbHasMissingTax_ShouldBackfillTaxIntoDb()
+        {
+            // Arrange
+            var stock = new Stock { Id = 8, Symbol = "WIPRO", Exchange = "NSE" };
+            var stockRepo = new Mock<IStockRepository>();
+            stockRepo.Setup(r => r.GetOrCreateStockAsync("WIPRO", "NSE", null, null, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(stock);
+
+            var dbQuarters = new List<StockFinancial>
+            {
+                new StockFinancial
+                {
+                    Id = 301,
+                    StockId = 8,
+                    PeriodKey = "quarterly-2024-12-31",
+                    PeriodType = "quarterly",
+                    FiscalYear = "Dec 2024",
+                    PeriodEndDate = new DateTime(2024, 12, 31),
+                    Revenue = 22000m,
+                    OperatingProfit = 4500m,
+                    Depreciation = 800m,
+                    Interest = 150m,
+                    ProfitBeforeTax = 3800m,
+                    Tax = null, // Missing tax in DB
+                    NetProfit = 2900m,
+                    Eps = 5.5m,
+                    Source = "IndianAPI",
+                    LastSyncedAt = DateTime.UtcNow
+                }
+            };
+
+            var financialRepo = new Mock<IStockFinancialRepository>();
+            financialRepo.Setup(r => r.GetFinancialsByStockIdAsync(8, "quarterly", 12))
+                .ReturnsAsync(dbQuarters);
+
+            var updatedEntities = new List<StockFinancial>();
+            financialRepo.Setup(r => r.UpdateAsync(It.IsAny<StockFinancial>()))
+                .Callback<StockFinancial>(e => updatedEntities.Add(e))
+                .Returns(Task.CompletedTask);
+
+            var companyRepo = new Mock<ICompanyRepository>();
+            var indianApiMock = new Mock<IIndianApiBalanceSheetClient>();
+            var yahooMock = new Mock<IYahooFinanceClient>();
+
+            var service = new StockQuarterlyResultsService(
+                stockRepo.Object,
+                financialRepo.Object,
+                companyRepo.Object,
+                _mapper,
+                NullLogger<StockQuarterlyResultsService>.Instance,
+                indianApiMock.Object,
+                yahooMock.Object);
+
+            // Act
+            var result = await service.GetQuarterlyResultsBySymbolAsync("WIPRO", "NSE", forceRefresh: false);
+
+            // Assert
+            result.Should().NotBeNull();
+            // 3800 PBT - 2900 PAT = 900 Tax
+            result.Summary.Tax.Should().Be(900m);
+            // 900 / 3800 * 100 = 23.68%
+            result.Summary.TaxPercentage.Should().Be(23.68m);
+            // Verify DB update was triggered
+            financialRepo.Verify(r => r.UpdateAsync(It.Is<StockFinancial>(f => f.Tax == 900m)), Times.AtLeastOnce);
+            financialRepo.Verify(r => r.SaveChangesAsync(), Times.AtLeastOnce);
+        }
     }
 }
